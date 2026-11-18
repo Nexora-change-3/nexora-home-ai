@@ -2,11 +2,24 @@ const ALLOWED_ORIGINS = new Set([
   "https://nexora-change-3.github.io",
   "https://feature-cloudflare-image-edi.nexora-home-ai-preview.pages.dev"
 ]);
+function isAllowedOrigin(origin) {
+  try {
+    if (ALLOWED_ORIGINS.has(origin)) return true;
+    const url = new URL(origin);
+    const labels = url.hostname.split(".");
+    return url.protocol === "https:" && labels.length === 4 &&
+      labels[1] === "nexora-home-ai-preview" && labels[2] === "pages" &&
+      labels[3] === "dev" && /^[a-f0-9]{8}$/.test(labels[0]);
+  } catch {
+    return false;
+  }
+}
+
 const MODEL = "@cf/black-forest-labs/flux-2-klein-4b";
 
 function json(data, status, origin) {
   const headers = { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" };
-  if (ALLOWED_ORIGINS.has(origin)) {
+  if (isAllowedOrigin(origin)) {
     headers["Access-Control-Allow-Origin"] = origin;
     headers["Access-Control-Allow-Methods"] = "POST, OPTIONS";
     headers["Access-Control-Allow-Headers"] = "Content-Type, X-NEXORA-KEY";
@@ -28,7 +41,7 @@ function corsHeaders(origin) {
 export default {
   async fetch(request, env) {
     const origin = request.headers.get("Origin") || "";
-    if (!ALLOWED_ORIGINS.has(origin)) return json({ error: "Источник запроса не разрешён." }, 403, "");
+    if (!isAllowedOrigin(origin)) return json({ error: "Источник запроса не разрешён." }, 403, "");
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(origin) });
     if (request.method !== "POST") return json({ error: "Разрешён только POST-запрос." }, 405, origin);
     if (!env.AI) return json({ error: "В Worker не подключена привязка Workers AI (AI)." }, 503, origin);
