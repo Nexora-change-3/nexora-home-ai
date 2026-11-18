@@ -1,4 +1,4 @@
-const CACHE = 'nexora-home-ai-v056';
+const CACHE = 'nexora-home-ai-v057';
 const FILES = [
   './',
   './index.html',
@@ -35,7 +35,23 @@ self.addEventListener('activate', event => {
 
 self.addEventListener('fetch', event => {
   const request = event.request;
-  if (request.method !== 'GET' || new URL(request.url).origin !== self.location.origin) return;
+  const url = new URL(request.url);
+  if (url.origin !== self.location.origin) return;
+
+  // API traffic must always go directly to Pages Functions; never consult Cache API.
+  if (url.pathname.startsWith('/api/')) {
+    event.respondWith(
+      fetch(request).catch(error => new Response(JSON.stringify({
+        error: 'Сетевая ошибка при обращении к API через Service Worker: ' + String(error && error.message || error)
+      }), {
+        status: 502,
+        headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }
+      }))
+    );
+    return;
+  }
+
+  if (request.method !== 'GET') return;
 
   if (request.mode === 'navigate') {
     event.respondWith(
