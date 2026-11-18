@@ -10,25 +10,26 @@ export async function onRequest(context) {
     });
   }
 
-  let stage = "подготовка запроса";
+  let stage = "чтение multipart-формы";
   try {
+    // Parse and rebuild multipart data instead of forwarding a streaming request body.
+    // This avoids opaque TypeError failures when a Pages Function reuses request.body
+    // in a new cross-service Request, and lets fetch generate a fresh multipart boundary.
+    const form = await request.formData();
+
     const headers = new Headers();
-    const contentType = request.headers.get("Content-Type");
     const accessKey = request.headers.get("X-NEXORA-KEY");
-    if (contentType) headers.set("Content-Type", contentType);
     if (accessKey) headers.set("X-NEXORA-KEY", accessKey);
     headers.set("Origin", request.headers.get("Origin") || PREVIEW_ORIGIN);
 
-    stage = "передача потокового тела Worker";
-    // Forward the incoming stream instead of buffering the entire multipart image body.
-    const upstreamRequest = new Request(WORKER_URL, {
+    stage = "передача multipart-формы Worker";
+    const upstream = await fetch(WORKER_URL, {
       method: "POST",
       headers,
-      body: request.body
+      body: form
     });
 
-    stage = "ожидание ответа Worker";
-    const upstream = await fetch(upstreamRequest);
+    stage = "возврат ответа Worker";
     const responseHeaders = new Headers();
     responseHeaders.set("Cache-Control", "no-store");
     responseHeaders.set("Content-Type", upstream.headers.get("Content-Type") || "application/octet-stream");
