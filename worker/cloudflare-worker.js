@@ -69,8 +69,12 @@ export default {
         prompt = "Use image 1 as the exact room to redesign. Apply the interior design style, color palette, materials, furniture language and lighting from image 0. Preserve the original room geometry, camera viewpoint, perspective, walls, ceiling height, windows, doors, openings and overall layout. Do not move or invent windows or doors. Do not alter structural elements. Create a photorealistic interior design visualization of this same room.";
       }
       form.set("prompt", prompt);
-      form.set("width", "1024");
-      form.set("height", "1024");
+      const outputWidth = Number(incoming.get("output_width") || 1024);
+      const outputHeight = Number(incoming.get("output_height") || 768);
+      if (!Number.isInteger(outputWidth) || !Number.isInteger(outputHeight) || outputWidth < 256 || outputWidth > 1920 || outputHeight < 256 || outputHeight > 1920)
+        return json({ error: "Размер результата должен быть от 256 до 1920 пикселей по каждой стороне." }, 400, origin);
+      form.set("width", String(outputWidth));
+      form.set("height", String(outputHeight));
       const serialized = new Response(form);
       const result = await env.AI.run(MODEL, { multipart: {
         body: serialized.body,
