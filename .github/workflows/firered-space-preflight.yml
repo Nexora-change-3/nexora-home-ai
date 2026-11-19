@@ -46,12 +46,13 @@ jobs:
 
           client = Client("FireRedTeam/FireRed-Image-Edit-1.1", verbose=False)
           uploaded_images, height, width = client.predict(
-              images=[{"image": handle_file(source_path), "caption": None}],
+              images=[(handle_file(source_path), None)],
               api_name="/on_image_upload",
           )
           if not uploaded_images:
               raise RuntimeError("FireRed upload preprocessing returned no images")
-          print("PREPROCESS_OK", "height", height, "width", width)
+          first = uploaded_images[0]
+          print("PREPROCESS_OK", "item_type", type(first).__name__, "height", height, "width", width)
 
           prompt = (
               "Restyle this kitchen as a calm, high-end contemporary Scandinavian interior: "
