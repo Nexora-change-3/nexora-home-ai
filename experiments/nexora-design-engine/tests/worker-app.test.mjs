@@ -21,7 +21,7 @@ test("serves the standalone app with restrictive security headers", async () => 
   assert.match(response.headers.get("content-security-policy"), /frame-ancestors 'none'/);
   const html = await response.text();
   assert.match(html, /NEXORA Design Engine/);
-  assert.match(html, /Qwen Image Edit 2511/);
+  assert.match(html, /FLUX\.2 Klein 9B/);
   assert.match(html, /externalProcessingConsent/);
   assert.match(html, /indexedDB/);
 });
@@ -32,8 +32,8 @@ test("serves health metadata without exposing credentials or image data", async 
   assert.equal(response.status, 200);
   assert.equal(body.ok, true);
   assert.equal(body.provider, "cloudflare-workers-ai");
-  assert.match(body.model, /Qwen Image Edit 2511/);
-  assert.equal(body.version, "1.1.0");
+  assert.match(body.model, /flux-2-klein-9b/);
+  assert.equal(body.version, "1.2.0");
   assert.equal(body.paid_fallback_enabled, false);
   assert.equal(body.output_storage, "Cloudflare D1 temporary; browser IndexedDB persistent");
   assert.equal(JSON.stringify(body).includes("token"), false);
@@ -104,10 +104,11 @@ test("the delivered app client script is syntactically valid", () => {
 });
 
 
-test("offers a session-only Hugging Face token field without persisting it", async () => {
+test("does not ask for a Hugging Face token and discloses the Cloudflare free-tier cap", async () => {
   const response = await worker.fetch(new Request("https://nexora.test/"), {});
   const html = await response.text();
-  assert.match(html, /id="hfToken" type="password"/);
-  assert.match(html, /X-HF-Token/);
-  assert.match(html, /не сохраняется в IndexedDB/);
+  assert.doesNotMatch(html, /hfToken|X-HF-Token|Hugging Face/);
+  assert.match(html, /Cloudflare Workers AI/);
+  assert.match(html, /3 генерации в сутки/);
+  assert.match(html, /платные сервисы не подключаются|платный резервный сервис отключён/i);
 });
