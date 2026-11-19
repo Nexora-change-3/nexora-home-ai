@@ -57,3 +57,14 @@ The Comfy page's code example runs on `https://cloud.comfy.org`, requires a paid
 5. Only after these gates and explicit approval, test on the user's original kitchen photo. The original remains immutable; no internet image or generated substitute is an accepted benchmark.
 
 No V1, V2, Pages or Production files were changed by this work.
+
+
+## Core node evidence checked on 2026-11-19
+
+The relevant node implementations are present in the current official ComfyUI source tree:
+
+- \`TextEncodeQwenImageEditPlus\` is implemented in \`comfy_extras/nodes_qwen.py\` and accepts \`image1\`, \`image2\`, and \`image3\` as optional conditioning images. NEXORA supplies the same single source through \`image1\` in both encoder nodes.
+- \`FluxKontextImageScale\` is implemented in \`comfy_extras/nodes_flux.py\`.
+- \`ComfySwitchNode\` is implemented in \`comfy_extras/nodes_logic.py\` and is marked experimental in its schema.
+
+This confirms that these node classes exist in current ComfyUI core; it does not establish that an arbitrary older self-hosted installation has the required version or that all model files load. The runtime gate remains: pin a ComfyUI release/commit, query that server's \`/object_info\`, verify all node schemas and assets, then run a synthetic image before any user photo.
