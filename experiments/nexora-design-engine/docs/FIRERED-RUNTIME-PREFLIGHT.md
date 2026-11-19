@@ -10,6 +10,6 @@ The NEXORA experiment now has a read-only preflight against a **real self-hosted
 
 The transport exposes only fixed read-only GET methods for this preflight. The model folder argument is allowlisted. The preflight does not upload an image, queue a prompt, download an output, or incur GPU generation cost.
 
-Important: this is now executable compatibility-checking code, but **no actual ComfyUI host is connected in this repository test run**. CI uses a deterministic fixture. Runtime compatibility remains unverified until a private authenticated ComfyUI host is configured and its live endpoint responses are inspected. The FireRed adapter must be gated on a successful report before it is used.
+Important: this is now executable compatibility-checking code, but **no actual ComfyUI host is connected in this repository test run**. CI uses a deterministic fixture. Runtime compatibility remains unverified until a private authenticated ComfyUI host is configured and its live endpoint responses are inspected. The FireRed 1.1 adapter factory now runs this preflight itself and refuses to return a renderer unless the report is compatible. The failure includes a structured diagnostic report; no source image is uploaded and no prompt is queued on this path.
 
 Source for endpoint behavior: ComfyUI core `server.py` and Comfy-Org API route documentation. See https://github.com/Comfy-Org/ComfyUI/blob/master/server.py and https://github.com/Comfy-Org/docs/blob/main/development/comfyui-server/comms_routes.mdx.

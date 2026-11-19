@@ -12,16 +12,38 @@ function stableStringify(value) {
 const workflow = JSON.parse(await readFile(new URL("../workflows/firered-image-edit-1.1-api.json", import.meta.url), "utf8"));
 const workflowHash = `sha256:${createHash("sha256").update(stableStringify(workflow)).digest("hex")}`;
 
+const classes = [...new Set(Object.values(workflow).map((node) => node.class_type))];
+const objectInfo = Object.fromEntries(classes.map((classType) => [classType, {
+  input: { required: Object.fromEntries(Object.entries(workflow).filter(([, node]) => node.class_type === classType).flatMap(([, node]) => Object.keys(node.inputs).map((name) => [name, ["STRING", {}]]))) },
+  experimental: classType === "ComfySwitchNode"
+}]));
+const modelInventory = {
+  diffusion_models: ["FireRed-Image-Edit-1.1-transformer.safetensors"],
+  loras: ["FireRed-Image-Edit-1.0-Lightning-8steps-v1.0.safetensors"],
+  text_encoders: ["qwen_2.5_vl_7b_fp8_scaled.safetensors"],
+  vae: ["qwen_image_vae.safetensors"]
+};
+function runtimeMethods(calls, { missingNode = false } = {}) {
+  const info = structuredClone(objectInfo);
+  if (missingNode) delete info.KSampler;
+  return {
+    async getObjectInfo() { calls.push("object_info"); return info; },
+    async getModels(folder) { calls.push(`models:${folder}`); return modelInventory[folder]; },
+    async getSystemStats() { calls.push("system_stats"); return { system: { comfyui_version: "test" } }; }
+  };
+}
+
 test("binds the inspected single-image FireRed graph to the renderer", async () => {
   const calls = [];
   const transport = {
+    ...runtimeMethods(calls),
     async uploadImage(input) { calls.push(["upload", input]); return { name: "uploaded-original.png" }; },
     async queuePrompt(input) { calls.push(["queue", input]); return { prompt_id: "firered-job-1" }; },
     async getHistory() { return { "firered-job-1": { status: { completed: true }, outputs: { "9": { images: [{ filename: "result.png", subfolder: "", type: "output" }] } } } }; },
     async getOutput() { return new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]); },
     async storeResult(input) { calls.push(["store", input]); return { image_ref: "nexora://results/firered-1" }; }
   };
-  const adapter = createFireRed11ComfyAdapter({ transport, workflow, workflowHash, pollIntervalMs: 0, sleep: async () => {} });
+  const adapter = await createFireRed11ComfyAdapter({ transport, workflow, workflowHash, pollIntervalMs: 0, sleep: async () => {} });
   assert.equal(adapter.modelId, FIRERED_11_MODEL_ID);
   const request = {
     request_id: "firered-req-1", source_image_ref: "nexora://source/original",
@@ -41,4 +63,20 @@ test("binds the inspected single-image FireRed graph to the renderer", async () 
 
 test("refuses to construct a FireRed adapter from an invalid graph", () => {
   assert.throws(() => createFireRed11ComfyAdapter({ transport: {}, workflow: { nodes: [], links: [] }, workflowHash }), { code: "INVALID_FIRERED_WORKFLOW" });
+});
+
+
+test("blocks adapter creation before image upload when live runtime lacks a required node", async () => {
+  const calls = [];
+  const transport = { ...runtimeMethods(calls, { missingNode: true }),
+    async uploadImage() { calls.push("upload"); throw new Error("must not upload"); },
+    async queuePrompt() { calls.push("queue"); throw new Error("must not queue"); },
+    async getHistory() {}, async getOutput() {}, async storeResult() {}
+  };
+  await assert.rejects(
+    () => createFireRed11ComfyAdapter({ transport, workflow, workflowHash }),
+    (error) => error.code === "FIRERED_RUNTIME_INCOMPATIBLE" && error.details.missing_nodes.some((node) => node.class_type === "KSampler")
+  );
+  assert.equal(calls.includes("upload"), false);
+  assert.equal(calls.includes("queue"), false);
 });
