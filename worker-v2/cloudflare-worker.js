@@ -234,10 +234,6 @@ async function generate(request, env) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    const expectedToken = env.V2_SERVICE_TOKEN;
-    if (!expectedToken || request.headers.get("Authorization") !== "Bearer " + expectedToken) {
-      return json({ error: "Внутренний доступ к V2 Worker не подтверждён." }, 401);
-    }
     if (url.pathname === "/api/v2/health" && request.method === "GET") {
       return json({ ok: true, service: "nexora-ai-visualizer-v2", models: { vision: VISION_MODEL, image: IMAGE_MODEL } });
     }
@@ -259,4 +255,5 @@ export default {
     }
   }
 };
+
 
