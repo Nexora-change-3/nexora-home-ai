@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nexora.invalid/schemas/design-brief.schema.json",
+  "title": "NEXORA Design Brief",
+  "description": "Provider-neutral design specification created before image generation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "input",
+    "room",
+    "constraints",
+    "design_concept",
+    "render_requirements",
+    "quality_checks"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_image_id", "source_image_immutable"],
+      "properties": {
+        "source_image_id": {"type": "string", "minLength": 1},
+        "source_image_immutable": {"type": "boolean", "const": true},
+        "user_brief": {"type": "string"},
+        "reference_image_ids": {
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      }
+    },
+    "room": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["room_type", "intended_use"],
+      "properties": {
+        "room_type": {
+          "type": "string",
+          "enum": ["kitchen", "living_room", "bedroom", "bathroom", "hallway", "office", "studio", "other"]
+        },
+        "intended_use": {"type": "string", "minLength": 1},
+        "dimensions": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "length_m": {"type": "number", "exclusiveMinimum": 0},
+            "width_m": {"type": "number", "exclusiveMinimum": 0},
+            "height_m": {"type": "number", "exclusiveMinimum": 0},
+            "measurement_status": {
+              "type": "string",
+              "enum": ["verified", "user_estimated", "vision_estimated", "unknown"]
+            }
+          }
+        },
+        "geometry_observations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["element", "status", "confidence"],
+            "properties": {
+              "element": {"type": "string"},
+              "status": {"type": "string", "enum": ["observed", "uncertain", "not_visible"]},
+              "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+              "notes": {"type": "string"}
+            }
+          }
+        }
+      }
+    },
+    "constraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fixed", "preserve", "replaceable", "unknown"],
+      "properties": {
+        "fixed": {"type": "array", "items": {"$ref": "#/$defs/constraint"}},
+        "preserve": {"type": "array", "items": {"$ref": "#/$defs/constraint"}},
+        "replaceable": {"type": "array", "items": {"$ref": "#/$defs/constraint"}},
+        "unknown": {"type": "array", "items": {"$ref": "#/$defs/constraint"}}
+      }
+    },
+    "design_concept": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["concept_id", "concept_name", "design_thesis", "style", "layout", "materials", "lighting", "color_palette", "furniture", "decor"],
+      "properties": {
+        "concept_id": {"type": "string"},
+        "concept_name": {"type": "string"},
+        "design_thesis": {"type": "string", "minLength": 1},
+        "style": {"type": "string"},
+        "layout": {"type": "object"},
+        "materials": {"type": "array", "items": {"type": "object"}},
+        "lighting": {"type": "array", "items": {"type": "object"}},
+        "color_palette": {"type": "array", "items": {"type": "string"}},
+        "furniture": {"type": "array", "items": {"type": "object"}},
+        "decor": {"type": "array", "items": {"type": "object"}},
+        "functional_rationale": {"type": "array", "items": {"type": "string"}},
+        "distinctiveness_tags": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "render_requirements": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "quality_checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["check_id", "severity", "description"],
+        "properties": {
+          "check_id": {"type": "string"},
+          "severity": {"type": "string", "enum": ["critical", "major", "minor"]},
+          "description": {"type": "string"}
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "created_at": {"type": "string", "format": "date-time"},
+        "design_brain_version": {"type": "string"},
+        "vision_model": {"type": "string"}
+      }
+    }
+  },
+  "$defs": {
+    "constraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["element", "reason"],
+      "properties": {
+        "element": {"type": "string"},
+        "reason": {"type": "string"},
+        "source": {"type": "string", "enum": ["user", "verified_measurement", "vision", "system"]},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+      }
+    }
+  }
+}
