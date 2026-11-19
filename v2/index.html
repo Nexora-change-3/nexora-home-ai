@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#101820">
+<title>NEXORA V2 — AI-дизайнер интерьеров</title>
+<style>
+:root{color-scheme:dark;--bg:#101820;--panel:#182632;--panel2:#20313e;--line:#344956;--text:#f3f0e8;--muted:#b3c0c5;--accent:#c7a982;--accent2:#e4d3b9;--danger:#f0a49b}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 15% 0%,#293b45 0,transparent 48%),var(--bg);color:var(--text);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+main{width:min(100% - 28px,980px);margin:0 auto;padding:24px 0 60px}.top{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:24px}.brand{font-size:15px;letter-spacing:.22em;font-weight:800}.version{color:var(--accent);font-size:11px;letter-spacing:.16em}.hero{padding:25px;border:1px solid var(--line);border-radius:22px;background:linear-gradient(135deg,#243641,#17242d);margin-bottom:18px}.hero h1{font-size:clamp(28px,6vw,43px);line-height:1.08;margin:0 0 10px;letter-spacing:-.04em}.hero p{color:var(--muted);max-width:680px;margin:0}.step{border:1px solid var(--line);border-radius:18px;background:rgba(24,38,50,.94);padding:20px;margin:14px 0}.stephead{display:flex;gap:12px;align-items:center;margin-bottom:14px}.num{width:30px;height:30px;display:grid;place-items:center;border-radius:50%;background:#3b4c53;color:var(--accent2);font-weight:700}.step h2{font-size:18px;margin:0}.muted{color:var(--muted);font-size:13px}.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}.field{display:grid;gap:7px;margin:10px 0}.field label{font-weight:650}.field select,.field textarea{width:100%;background:#0f1a22;color:var(--text);border:1px solid var(--line);border-radius:12px;padding:12px;font:inherit}.field textarea{min-height:78px;resize:vertical}.file{display:block;width:100%;padding:12px;border:1px dashed #71838a;border-radius:12px;background:#111e27;color:var(--muted)}button{font:inherit;font-weight:650;border:0;border-radius:12px;padding:12px 17px;cursor:pointer;background:var(--accent);color:#17212a}button.secondary{background:#30434e;color:var(--text);border:1px solid #536671}button:disabled{opacity:.48;cursor:not-allowed}.preview{display:none;max-width:100%;max-height:330px;object-fit:contain;border-radius:12px;margin-top:12px;background:#0c151b}.preview.show{display:block}.style-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}.style{background:#101b23;border:1px solid var(--line);border-radius:13px;padding:6px;color:var(--text);text-align:left;min-width:0}.style img{width:100%;aspect-ratio:1.25;object-fit:cover;border-radius:8px;display:block}.style span{display:block;padding:7px 3px 3px;font-size:12px;line-height:1.25}.style[aria-pressed=true]{border:2px solid var(--accent);padding:5px;box-shadow:0 0 0 2px #c7a98222}.analysis{margin-top:14px;padding:14px;border-radius:12px;background:#101d25;border:1px solid var(--line)}.analysis p{margin:5px 0}.warning{color:#ffd3a6}.status{margin-top:12px;color:var(--muted);white-space:pre-wrap}.results{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:14px}.result{background:#101b23;border:1px solid var(--line);border-radius:14px;padding:9px;min-width:0}.result img{width:100%;display:block;border-radius:9px}.result strong{display:block;margin:8px 0}.result .qa{font-size:12px;color:var(--muted);margin:6px 0}.result a{color:var(--accent2);font-size:13px}.hidden{display:none!important}.foot{color:var(--muted);font-size:12px;text-align:center;margin-top:20px}
+@media(max-width:700px){main{width:min(100% - 20px,980px);padding-top:14px}.hero{padding:20px}.step{padding:15px}.style-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.results{grid-template-columns:1fr}.top{margin-bottom:14px}}
+</style>
+</head>
+<body>
+<main>
+<div class="top"><div class="brand">NEXORA HOME</div><div class="version">V2 · DESIGN STUDIO</div></div>
+<header class="hero"><h1>Дизайн начинается с понимания пространства</h1><p>Сначала анализируем реальную комнату, затем применяем выбранный стиль и создаём три самостоятельные концепции. Геометрию и назначение помещения сохраняем.</p></header>
+
+<section class="step">
+  <div class="stephead"><div class="num">1</div><h2>Фото и тип помещения</h2></div>
+  <div class="field"><label for="roomType">Что проектируем?</label><select id="roomType">
+    <option value="kitchen">Кухня</option><option value="bathroom">Ванная</option><option value="toilet">Туалет</option><option value="combined_bathroom">Совмещённый санузел</option><option value="hallway">Прихожая</option><option value="living_room">Гостиная</option><option value="bedroom">Спальня</option><option value="kids_room">Детская</option><option value="office">Кабинет</option><option value="other">Другое</option>
+  </select></div>
+  <div class="field"><label for="roomFile">Фотография помещения</label><input class="file" id="roomFile" type="file" accept="image/*"></div>
+  <div class="row"><button class="secondary" id="loadSaved" type="button">Взять последнее фото из NEXORA</button><span class="muted">Попробуем использовать сохранённую сессию предыдущей версии на этом устройстве.</span></div>
+  <img class="preview" id="roomPreview" alt="Фото помещения">
+  <div class="field"><label for="userReference">Дополнительный референс (необязательно)</label><input class="file" id="userReference" type="file" accept="image/*"></div>
+  <img class="preview" id="referencePreview" alt="Дополнительный референс">
+  <div class="row" style="margin-top:14px"><button id="analyzeBtn" type="button">Проанализировать помещение</button></div>
+  <div class="status" id="analyzeStatus" aria-live="polite"></div>
+  <div class="analysis hidden" id="analysisCard"></div>
+  <button class="secondary hidden" id="confirmBtn" type="button" style="margin-top:10px">Подтверждаю выбранный тип помещения</button>
+</section>
+
+<section class="step">
+  <div class="stephead"><div class="num">2</div><h2>Выберите стиль</h2></div>
+  <p class="muted">Тип помещения и стиль — разные настройки. Выбранный стиль будет передан модели как изображение-референс, а не только как название.</p>
+  <div class="style-grid" id="styleGrid"></div>
+  <div class="field"><label for="wishes">Ваши пожелания (необязательно)</label><textarea id="wishes" placeholder="Например: больше закрытого хранения, тёплое дерево, без глянца..."></textarea></div>
+</section>
+
+<section class="step">
+  <div class="stephead"><div class="num">3</div><h2>Три дизайнерские концепции</h2></div>
+  <p class="muted">Концепции отличаются композиционным решением, мебелью, материалами и фокусными элементами, оставаясь в выбранном стиле.</p>
+  <button id="generateBtn" type="button" disabled>Создать 3 варианта</button>
+  <div class="status" id="generateStatus" aria-live="polite"></div>
+  <div class="results" id="results"></div>
+</section>
+<div class="foot">Изображения и результаты сохраняются в текущей сессии браузера. V2 работает отдельно от прежней версии.</div>
+</main>
+<script>
+(function(){
+"use strict";
+const styles=[
+{name:"Japandi",file:"japandi.webp",title:"Japandi"},
+{name:"Современный",file:"modern.webp",title:"Современный"},
+{name:"Тёплый минимализм",file:"warm-minimal.webp",title:"Тёплый минимализм"},
+{name:"Современная классика",file:"modern-classic.webp",title:"Современная классика"},
+{name:"Organic Modern",file:"organic-modern.webp",title:"Organic Modern"},
+{name:"Mid-century Modern",file:"mid-century.webp",title:"Mid-century Modern"},
+{name:"Лофт",file:"loft.webp",title:"Лофт"},
+{name:"Средиземноморский",file:"mediterranean.webp",title:"Средиземноморский"},
+{name:"Ар-деко",file:"art-deco.webp",title:"Ар-деко"},
+{name:"Luxury",file:"luxury.webp",title:"Luxury"}
+];
+const $=id=>document.getElementById(id);
+let selectedStyle="Japandi",roomFile=null,userReference=null,analysisData=null,analysisConfirmed=false,roomDimensions={width:1024,height:768},roomUrl=null,referenceUrl=null;
+const styleGrid=$("styleGrid");
+styles.forEach(s=>{
+ const b=document.createElement("button");b.type="button";b.className="style";b.dataset.style=s.name;b.setAttribute("aria-pressed",String(s.name===selectedStyle));
+ const img=document.createElement("img");img.src="../assets/styles/"+s.file;img.alt="";
+ const label=document.createElement("span");label.textContent=s.title;b.append(img,label);
+ b.addEventListener("click",()=>{selectedStyle=s.name;styleGrid.querySelectorAll(".style").forEach(x=>x.setAttribute("aria-pressed",String(x.dataset.style===selectedStyle)))});
+ styleGrid.appendChild(b);
+});
+function preview(file,img,oldUrl){if(oldUrl)URL.revokeObjectURL(oldUrl);if(!file){img.removeAttribute("src");img.classList.remove("show");return null}const url=URL.createObjectURL(file);img.src=url;img.classList.add("show");return url}
+function resizeBlob(file,maxSide){return new Promise((resolve,reject)=>{const image=new Image(),url=URL.createObjectURL(file);image.onload=()=>{const scale=Math.min(1,maxSide/Math.max(image.naturalWidth,image.naturalHeight));const w=Math.max(1,Math.round(image.naturalWidth*scale)),h=Math.max(1,Math.round(image.naturalHeight*scale));const canvas=document.createElement("canvas");canvas.width=w;canvas.height=h;canvas.getContext("2d").drawImage(image,0,0,w,h);canvas.toBlob(blob=>{URL.revokeObjectURL(url);if(blob)resolve(blob);else reject(new Error("Не удалось подготовить изображение."))},"image/jpeg",.88)};image.onerror=()=>{URL.revokeObjectURL(url);reject(new Error("Не удалось прочитать изображение."))};image.src=url})}
+function setRoom(file){roomFile=file;roomUrl=preview(file,$("roomPreview"),roomUrl);analysisData=null;analysisConfirmed=false;$("analysisCard").classList.add("hidden");$("confirmBtn").classList.add("hidden");$("generateBtn").disabled=true}
+$("roomFile").addEventListener("change",e=>setRoom(e.target.files&&e.target.files[0]||null));
+$("userReference").addEventListener("change",e=>{userReference=e.target.files&&e.target.files[0]||null;referenceUrl=preview(userReference,$("referencePreview"),referenceUrl)});
+$("loadSaved").addEventListener("click",async()=>{
+ const status=$("analyzeStatus");status.textContent="Ищем последнюю сохранённую сессию…";
+ try{
+  const db=await new Promise((resolve,reject)=>{const req=indexedDB.open("nexora_home_ai_local");req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);req.onupgradeneeded=()=>{req.transaction.abort()}});
+  if(!db.objectStoreNames.contains("studioSessions"))throw new Error("В старой версии не найдено сохранённых сессий.");
+  const sessions=await new Promise((resolve,reject)=>{const req=db.transaction("studioSessions","readonly").objectStore("studioSessions").getAll();req.onsuccess=()=>resolve(req.result||[]);req.onerror=()=>reject(req.error)});
+  db.close();sessions.sort((a,b)=>(b.createdAt||b.id)-(a.createdAt||a.id));const latest=sessions.find(x=>x.roomBlob);
+  if(!latest)throw new Error("Сохранённое фото комнаты не найдено.");
+  setRoom(new File([latest.roomBlob],"nexora-saved-room.jpg",{type:latest.roomBlob.type||"image/jpeg"}));
+  if(latest.referenceBlob){userReference=new File([latest.referenceBlob],"nexora-saved-reference.jpg",{type:latest.referenceBlob.type||"image/jpeg"});referenceUrl=preview(userReference,$("referencePreview"),referenceUrl);$("userReference").value=""}
+  if(latest.style&&styles.some(x=>x.name===latest.style)){selectedStyle=latest.style;styleGrid.querySelectorAll(".style").forEach(x=>x.setAttribute("aria-pressed",String(x.dataset.style===selectedStyle)))}
+  status.textContent="Сохранённое фото восстановлено. Выберите тип помещения и запустите анализ.";
+ }catch(e){status.textContent="Не удалось получить сохранённое фото: "+e.message}
+});
+$("analyzeBtn").addEventListener("click",async()=>{
+ if(!roomFile){$("analyzeStatus").textContent="Сначала выберите фото или восстановите сохранённую сессию.";return}
+ const button=$("analyzeBtn");button.disabled=true;$("analyzeStatus").textContent="Анализируем геометрию, проёмы, мебель и оборудование…";
+ try{
+  const room=await resizeBlob(roomFile,511);const form=new FormData();form.append("room_image",room,"room.jpg");form.append("room_type",$("roomType").value);
+  const response=await fetch("/api/v2/analyze",{method:"POST",body:form,cache:"no-store"});const data=await response.json();if(!response.ok)throw new Error(data.error||("Ошибка анализа "+response.status));
+  analysisData=data;analysisConfirmed=!data.needs_confirmation;
+  const a=data.analysis||{};const lines=[];
+  lines.push("<strong>Распознано:</strong> "+(a.detected_room_type||"не определено")+" · уверенность "+Math.round((a.confidence||0)*100)+"%");
+  if(a.summary)lines.push("<p>"+escapeHtml(a.summary)+"</p>");
+  if(a.architecture)lines.push("<p><strong>Архитектура:</strong> "+escapeHtml(JSON.stringify(a.architecture))+"</p>");
+  if(a.visible_objects&&a.visible_objects.length)lines.push("<p><strong>Объекты:</strong> "+escapeHtml(a.visible_objects.join(", "))+"</p>");
+  if(a.layout_constraints&&a.layout_constraints.length)lines.push("<p><strong>Ограничения:</strong> "+escapeHtml(a.layout_constraints.join("; "))+"</p>");
+  if(a.uncertainties&&a.uncertainties.length)lines.push("<p class='warning'><strong>Неясно:</strong> "+escapeHtml(a.uncertainties.join("; "))+"</p>");
+  if(data.mismatch)lines.push("<p class='warning'>Тип на фотографии отличается от выбранного. Подтвердите, что хотите проектировать именно выбранный тип.</p>");
+  else if(data.needs_confirmation)lines.push("<p class='warning'>Уверенность анализа невысокая. Проверьте описание перед генерацией.</p>");
+  $("analysisCard").innerHTML=lines.join("");$("analysisCard").classList.remove("hidden");
+  if(data.needs_confirmation){$("confirmBtn").classList.remove("hidden");$("generateBtn").disabled=true}
+  else{$("confirmBtn").classList.add("hidden");$("generateBtn").disabled=false}
+  $("analyzeStatus").textContent="Анализ завершён. Проверьте распознанные элементы.";
+ }catch(e){$("analyzeStatus").textContent="Анализ остановлен: "+e.message}
+ finally{button.disabled=false}
+});
+$("confirmBtn").addEventListener("click",()=>{analysisConfirmed=true;$("generateBtn").disabled=false;$("confirmBtn").classList.add("hidden");$("analyzeStatus").textContent="Вы подтвердили выбранный тип помещения. Можно создавать концепции."});
+function escapeHtml(value){return String(value).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+async function loadProfile(){const response=await fetch("/style-profiles.json",{cache:"no-store"});if(!response.ok)throw new Error("Не удалось загрузить библиотеку стилевых профилей.");const data=await response.json();return data.profiles&&data.profiles[selectedStyle]||{}}
+function bytesToBlob(base64,type){const binary=atob(base64);const bytes=new Uint8Array(binary.length);for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);return new Blob([bytes],{type:type||"image/png"})}
+function showResult(data,index){const blob=bytesToBlob(data.image_base64,data.image_type);const url=URL.createObjectURL(blob);const card=document.createElement("article");card.className="result";const img=document.createElement("img");img.src=url;img.alt="Концепция "+index;const title=document.createElement("strong");title.textContent="Концепция "+index+" · "+selectedStyle;const qa=document.createElement("div");qa.className="qa";if(data.qa&&data.qa.status==="checked"){qa.textContent=data.qa.needs_review?"Нужна дополнительная проверка: "+[].concat(data.qa.prohibited_items||[],data.qa.functional_issues||[]).join("; "):"Автопроверка выполнена. Тип помещения: "+data.qa.detected_room_type}else{qa.textContent="Автопроверка: "+(data.qa&&data.qa.note||"результат не подтверждён")};const link=document.createElement("a");link.href=url;link.download="NEXORA-V2-concept-"+index+".png";link.textContent="Скачать PNG";card.append(img,title,qa,link);$("results").appendChild(card)}
+$("generateBtn").addEventListener("click",async()=>{
+ if(!roomFile||!analysisData||!analysisConfirmed){$("generateStatus").textContent="Сначала загрузите фото, завершите анализ и подтвердите помещение.";return}
+ const button=$("generateBtn");button.disabled=true;$("results").innerHTML="";$("generateStatus").textContent="Подготавливаем фотографии и дизайн-бриф…";
+ try{
+  const room=await resizeBlob(roomFile,511);const style=styles.find(x=>x.name===selectedStyle);const styleResponse=await fetch("../assets/styles/"+style.file);if(!styleResponse.ok)throw new Error("Не удалось загрузить визуальный референс стиля.");const style=await resizeBlob(await styleResponse.blob(),511);
+  let userRef=null;if(userReference)userRef=await resizeBlob(userReference,511);
+  const profile=await loadProfile();const width=Math.min(1024,Math.round(roomDimensions.width||1024));const height=Math.min(1024,Math.round(roomDimensions.height||768));
+  for(let variant=1;variant<=3;variant++){
+   $("generateStatus").textContent="Создаём и проверяем концепцию "+variant+" из 3…";
+   const form=new FormData();form.append("room_image",room,"room.jpg");form.append("style_reference",style,"style-reference.jpg");if(userRef)form.append("user_reference",userRef,"user-reference.jpg");
+   form.append("room_type",$("roomType").value);form.append("style_name",selectedStyle);form.append("style_profile",JSON.stringify(profile));form.append("analysis",JSON.stringify(analysisData.analysis));form.append("confirmed_room_type",$("roomType").value);form.append("user_prompt",$("wishes").value.trim());form.append("variant_index",String(variant));form.append("output_width",String(width));form.append("output_height",String(height));
+   const response=await fetch("/api/v2/generate",{method:"POST",body:form,cache:"no-store"});const data=await response.json();if(!response.ok)throw new Error(data.error||("Ошибка генерации "+response.status));showResult(data,variant);
+  }
+  $("generateStatus").textContent="Готово: три концепции созданы и сохранены в этой вкладке. Сравните их по композиции, материалам и функциональности.";
+ }catch(e){$("generateStatus").textContent="Остановлено: "+e.message+". Уже созданные варианты остались на экране."}
+ finally{button.disabled=false}
+});
+const originalFile=$("roomFile");
+function updateDimensions(file){if(!file)return;const img=new Image(),url=URL.createObjectURL(file);img.onload=()=>{roomDimensions={width:Math.max(256,Math.round(img.naturalWidth*Math.min(1,1024/Math.max(img.naturalWidth,img.naturalHeight)))),height:Math.max(256,Math.round(img.naturalHeight*Math.min(1,1024/Math.max(img.naturalWidth,img.naturalHeight))))};URL.revokeObjectURL(url)};img.src=url}
+originalFile.addEventListener("change",e=>updateDimensions(e.target.files&&e.target.files[0]));
+const nativeSetRoom=setRoom;
+setRoom=function(file){nativeSetRoom(file);updateDimensions(file)};
+})();
+</script>
+</body>
+</html>
