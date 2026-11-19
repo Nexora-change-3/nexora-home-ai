@@ -1,37 +1,50 @@
-# FireRed Image Edit 1.1 ComfyUI workflow inspection
+# FireRed 1.1 workflow compatibility audit
 
-Inspection date: 2026-11-19
+Audit date: 2026-11-19
 
-## Official package found
+## Verified official workflow sources
 
-FireRedTeam's official Hugging Face repository is:
-https://huggingface.co/FireRedTeam/FireRed-Image-Edit-1.1-ComfyUI
+There are two distinct artifacts that must not be conflated:
 
-The model card identifies this package as the ComfyUI adaptation of FireRed Image Edit 1.1, 20B parameters, Apache-2.0. Its README links the workflow file:
-https://huggingface.co/FireRedTeam/FireRed-Image-Edit-1.1-ComfyUI/blob/main/firered-image-edit-1.1.json
+1. **FireRedTeam Hugging Face ComfyUI package**  
+   https://huggingface.co/FireRedTeam/FireRed-Image-Edit-1.1-ComfyUI  
+   Its README links `firered-image-edit-1.1.json` (revision observed in the earlier inspection: `179def9`). The inspected file is a ComfyUI *frontend* graph (top-level `nodes`, `links`, widget state), not the API prompt object accepted by `POST /prompt`. The linked README describes single- and multi-image workflow material; the particular JSON inspected was the multi-image graph. Do not infer that every FireRed 1.1 graph has multiple image inputs.
 
-The workflow file's verified upstream revision shown by Hugging Face is `179def9`. The file is about 29.6 kB.
+2. **Comfy's FireRed Image Edit 1.1 Hub workflow**  
+   https://comfy.org/hub/workflows/firered-image-edit-1-1-image-edit-c0198b907108/  
+   The page publishes an API-format workflow example. The visible API graph has one `LoadImage` node (ID `143`), one user-facing prompt input (positive text node `167:118`), one `SaveImage` output (node `9`), plus model/encoder/VAE/sampling nodes. The negative text encoder node `167:117` also references the same resized source image. That is not a second uploaded source photo. The SaveImage node consumes the decoded image output `167:126`. This is a single-source-image graph and is a better candidate for NEXORA's one-room-photo path, subject to runtime compatibility verification.
 
-## Critical format finding
+## Critical runtime distinction
 
-The downloaded JSON is the ComfyUI frontend graph format: it contains top-level `nodes`, `links`, `last_node_id` and UI widget state. It is not the API prompt object expected by ComfyUI's `POST /prompt` endpoint. It must be opened in a compatible ComfyUI instance and exported using the API-format workflow export before NEXORA can pin the executable prompt graph.
+The Comfy Hub page's documented code uses `comfy-sdk==0.4.0`, `COMFY_API_KEY`, and `https://cloud.comfy.org`. It explicitly states that this runs on Comfy Cloud, requires a paid Cloud plan and credits, and that each submission can start a paid run. It warns not to automatically retry a submission whose outcome is unknown.
 
-The graph includes multiple LoadImage nodes and multiple image inputs to Qwen image-edit conditioning. Therefore, it must not be assumed to be the single-source room-photo workflow without verifying the single-image variant.
+NEXORA's current `comfyui-http-transport.mjs` instead implements the self-hosted ComfyUI HTTP API routes:
+- `POST /upload/image`
+- `POST /prompt`
+- `GET /history/{prompt_id}`
+- `GET /view`
 
-The model README labels multi-image and single-image workflow sections, but the repository's linked JSON inspected here is the multi-image graph. The single-image graph's downloadable file was not identified from the README content.
+These are **not interchangeable integrations**. The current transport is a candidate for a private self-hosted ComfyUI server behind an authenticated reverse proxy. It is not a Comfy Cloud SDK client and must not be pointed at `cloud.comfy.org`. Stock self-hosted ComfyUI does not itself imply the Bearer authentication used by the transport; the deployment must provide a private authenticated gateway/reverse proxy, or the transport must be changed to the actual auth mechanism. Never expose an unauthenticated ComfyUI server publicly.
 
-## Consequence for NEXORA
+## What is and is not validated
 
-- Do not guess API node IDs from the UI graph.
-- Do not convert the UI graph to API format by hand and assume the widget mapping is correct.
-- Next required step: obtain the official single-image workflow (if published), load it into a ComfyUI environment with matching nodes/models, export API format, inspect the resulting class_type/input graph, calculate SHA-256, and add the pinned API graph plus explicit node map to the experiment branch.
-- Until that export exists, the render adapter remains correctly transport-mocked and cannot be pointed at a live model.
+- The Comfy Hub page proves that a single-image FireRed 1.1 API-format graph is published and documents its node IDs and model assets.
+- It does **not** prove that the Hub graph runs unchanged on a self-hosted ComfyUI deployment. Custom node availability, model filenames, LoRA compatibility, ComfyUI version, and API-export behavior must be checked.
+- The Hugging Face package graph and Comfy Hub API graph are different artifacts. Do not hash one and configure node mappings from the other.
+- NEXORA's mocked transport tests do not validate either real graph or actual FireRed inference.
+- No live server, GPU, paid Comfy Cloud credits, or user image was used.
 
-## Source references
+## Required next engineering steps
 
-- FireRedTeam official model card and workflow package: https://huggingface.co/FireRedTeam/FireRed-Image-Edit-1.1-ComfyUI
-- Official README raw content: https://huggingface.co/FireRedTeam/FireRed-Image-Edit-1.1-ComfyUI/raw/main/README.md
-- Official workflow JSON raw content: https://huggingface.co/FireRedTeam/FireRed-Image-Edit-1.1-ComfyUI/raw/main/firered-image-edit-1.1.json
-- Hugging Face workflow file revision: `179def9`
+1. Adopt the Comfy Hub single-image API graph as a **candidate template**, not a proven local workflow.
+2. Retrieve the exact downloadable API JSON and pin its immutable revision/hash.
+3. Validate the graph structurally: required `class_type` and input names, one original image input, positive/negative prompt mapping, model/LoRA/CLIP/VAE assets, and the configured SaveImage output.
+4. Build a local ComfyUI compatibility checklist for every node and asset. Resolve the FireRed 1.1 vs Lightning LoRA version pairing before running.
+5. Make the runtime choice explicit: self-hosted private ComfyUI (no cloud credit charge, but GPU host cost) or Comfy Cloud SDK (paid; requires separate explicit approval). Do not mix their clients.
+6. Before any user photo is sent, use a synthetic fixture and a real test server only after infrastructure, authentication, retention, and cost have been approved.
 
-No GPU/runtime was started and no user photo was uploaded.
+## Source
+
+Comfy Hub workflow page, inspected 2026-11-19:
+https://comfy.org/hub/workflows/firered-image-edit-1-1-image-edit-c0198b907108/
+Relevant facts: single `LoadImage` node `143`; positive prompt node `167:118`; negative text node `167:117`; `SaveImage` node `9`; Comfy SDK example targets paid Comfy Cloud.
