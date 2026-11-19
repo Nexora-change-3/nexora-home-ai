@@ -1,4 +1,4 @@
-const CACHE = 'nexora-home-ai-v057';
+const CACHE = 'nexora-home-ai-v058';
 const FILES = [
   './',
   './index.html',
@@ -38,18 +38,9 @@ self.addEventListener('fetch', event => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
-  // API traffic must always go directly to Pages Functions; never consult Cache API.
-  if (url.pathname.startsWith('/api/')) {
-    event.respondWith(
-      fetch(request).catch(error => new Response(JSON.stringify({
-        error: 'Сетевая ошибка при обращении к API через Service Worker: ' + String(error && error.message || error)
-      }), {
-        status: 502,
-        headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }
-      }))
-    );
-    return;
-  }
+  // Leave API requests entirely to the browser network stack.
+  // Do not proxy multipart POST bodies through the Service Worker in Safari.
+  if (url.pathname.startsWith('/api/')) return;
 
   if (request.method !== 'GET') return;
 
