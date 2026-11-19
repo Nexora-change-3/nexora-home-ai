@@ -11,9 +11,8 @@ export async function onRequest({ request }) {
   }
 
   try {
-    // The generate route expects multipart/form-data. An empty FormData
-    // keeps the diagnostic request valid while the intentionally invalid
-    // key makes the Worker stop at authentication, before AI generation.
+    // Valid multipart request with a deliberately invalid key:
+    // the Worker should reject it before any AI call or image generation.
     const form = new FormData();
     const upstream = await fetch(new URL("/api/generate", request.url).toString(), {
       method: "POST",
@@ -24,21 +23,20 @@ export async function onRequest({ request }) {
     let details = {};
     try { details = await upstream.json(); } catch {}
 
-    const ready = upstream.status === 401;
-    const status = ready ? 200 : 502;
+    const reachable = upstream.status === 401;
     return new Response(JSON.stringify({
-      ok: ready,
+      ok: reachable,
       pagesFunction: "reachable",
-      generateRoute: ready ? "reachable" : "failed",
-      worker: ready ? "reachable" : "not_confirmed",
+      generateRoute: reachable ? "reachable" : "failed",
+      worker: reachable ? "reachable",
       workerStatus: upstream.status,
-      aiBindingAndSecret: ready ? "configured" :
-        upstream.status === 503 ? "missing_or_invalid_binding_or_secret" : "not_confirmed",
-      message: ready
-        ? "Pages Function and Worker are reachable; invalid diagnostic key was correctly rejected."
+      authenticationGate: reachable ? "responding" : "not_confirmed",
+      aiBindingAndRealKey: "not_tested",
+      message: reachable
+        ? "Pages Function and Worker are reachable; the intentionally invalid diagnostic key was rejected. AI binding and the real access key were not tested."
         : details.error || "Worker connection could not be confirmed."
     }), {
-      status,
+      status: reachable ? 200 : 502,
       headers: {
         "Content-Type": "application/json; charset=utf-8",
         "Cache-Control": "no-store"
