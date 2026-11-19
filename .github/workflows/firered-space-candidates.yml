@@ -1,0 +1,38 @@
+name: FireRed candidate Space API inspection
+
+on:
+  push:
+    branches:
+      - experiment/nexora-design-engine
+    paths:
+      - .github/workflows/firered-space-candidates.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-candidates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Inspect public FireRed Space APIs without image upload or inference
+        run: |
+          python -m pip install --disable-pip-version-check --no-cache-dir gradio_client
+          python - <<'PY'
+          from gradio_client import Client
+
+          candidates = [
+              "ysharma/fast-image-studio",
+              "someone-in-the-world/FireRed-Experimental-Turbo",
+              "ysharma/firered-server-studio",
+          ]
+          for space in candidates:
+              print("\n=== SPACE", space, "===")
+              try:
+                  client = Client(space, verbose=False)
+                  print("CONNECTED", client.src)
+                  client.view_api()
+              except Exception as exc:
+                  print("UNAVAILABLE", type(exc).__name__, repr(exc))
+          PY
