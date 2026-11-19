@@ -176,3 +176,41 @@ test("rejects reuse of a request_id for a different source image", async () => {
   await assert.rejects(second.adapter.render({ ...second.request, source_image_ref: "nexora://source/other" }), { code: "REQUEST_ID_CONFLICT" });
   assert.equal(second.calls.length, 0);
 });
+
+
+test("recovers an already queued prompt without uploading or queueing a second render", async () => {
+  const dispatchStore = createMemoryDispatchStore();
+  await dispatchStore.claim({ requestId: "req-1", sourceImageRef: "nexora://source/original", workflowHash: `sha256:${createHash("sha256").update(stableStringify({ "1": { inputs: { image: "", text: "" } }, "9": { inputs: {} } })).digest("hex")}` });
+  await dispatchStore.markQueued("req-1", "prompt-123");
+  const { adapter, calls } = setup({ options: { dispatchStore } });
+  const result = await adapter.recover("req-1");
+  assert.equal(result.status, "succeeded");
+  assert.equal(result.prompt_id, "prompt-123");
+  assert.equal(result.recovered, true);
+  assert.deepEqual(calls.map(([name]) => name), ["history", "output", "store"]);
+  assert.equal((await dispatchStore.get("req-1")).state, "succeeded");
+});
+
+test("does not attempt recovery or requeue when submission outcome is unknown", async () => {
+  const dispatchStore = createMemoryDispatchStore();
+  await dispatchStore.claim({ requestId: "req-1", sourceImageRef: "nexora://source/original", workflowHash: `sha256:${createHash("sha256").update(stableStringify({ "1": { inputs: { image: "", text: "" } }, "9": { inputs: {} } })).digest("hex")}` });
+  await dispatchStore.markUnknown("req-1");
+  const { adapter, calls } = setup({ options: { dispatchStore } });
+  await assert.rejects(adapter.recover("req-1"), { code: "DISPATCH_NOT_RECOVERABLE" });
+  assert.equal(calls.length, 0);
+});
+
+test("returns a saved successful result without contacting ComfyUI", async () => {
+  const dispatchStore = createMemoryDispatchStore();
+  const first = setup({ options: { dispatchStore } });
+  const result = await first.adapter.render(first.request);
+  const second = setup({ options: { dispatchStore } });
+  assert.deepEqual(await second.adapter.recover("req-1"), result);
+  assert.equal(second.calls.length, 0);
+});
+
+test("reports a missing dispatch record without contacting ComfyUI", async () => {
+  const { adapter, calls } = setup();
+  await assert.rejects(adapter.recover("missing"), { code: "DISPATCH_RECORD_NOT_FOUND" });
+  assert.equal(calls.length, 0);
+});

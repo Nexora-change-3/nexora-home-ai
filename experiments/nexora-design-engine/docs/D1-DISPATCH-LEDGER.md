@@ -33,3 +33,10 @@ A `queued` record retains `prompt_id`, which is enough to poll the existing Comf
 ## Validation
 
 Tests cover store recreation against a shared D1-compatible fake binding, atomic duplicate claims, state transitions, result persistence, request-ID conflicts, and adapter recreation after an ambiguous queue submission. These are unit/contract tests, not a live D1 integration test.
+
+
+## Recovery API
+
+`adapter.recover(requestId, { signal })` resumes only a ledger row in `queued` state with a saved ComfyUI `prompt_id`. It polls that exact history entry, fetches the existing output and stores a new immutable NEXORA result; it never uploads the source or calls `/prompt` again. A `succeeded` row returns its saved result. Missing rows, `submitting` and `outcome_unknown` rows fail closed and require reconciliation.
+
+The recovery method is implemented and covered by mocked adapter tests. It is not yet a scheduled/background recovery worker. The in-memory default is not durable; D1 must be separately provisioned and bound before process-restart recovery is available. Concurrent recovery across multiple Worker instances is not yet protected by a lease, so production scheduling must wait for an atomic recovery-claim design and live D1 tests.

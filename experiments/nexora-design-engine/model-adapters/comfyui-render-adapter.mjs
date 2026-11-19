@@ -126,6 +126,7 @@ export function createComfyUiRenderAdapter({
   const pinnedWorkflow = clone(workflow);
   const inFlight = new Map();
   const completed = new Map();
+  const recovering = new Map();
   // Once queue submission begins, a transport failure is ambiguous: ComfyUI may
   // have accepted the job even if its response never reached NEXORA.
   const submissions = new Map();
@@ -236,9 +237,75 @@ export function createComfyUiRenderAdapter({
     }
   }
 
+  async function recover(requestId, { signal } = {}) {
+    assert(typeof requestId === "string" && requestId.trim(), "INVALID_REQUEST", "A non-empty request_id is required for recovery.");
+    if (completed.has(requestId)) return completed.get(requestId);
+    if (recovering.has(requestId)) return recovering.get(requestId);
+    const operation = recoverQueuedRequest(requestId, signal);
+    recovering.set(requestId, operation);
+    try {
+      const result = await operation;
+      if (result?.status === "succeeded") completed.set(requestId, result);
+      return result;
+    } finally {
+      recovering.delete(requestId);
+    }
+  }
+
+  async function recoverQueuedRequest(requestId, signal) {
+    const record = await dispatchStore.get(requestId);
+    assert(record, "DISPATCH_RECORD_NOT_FOUND", "No dispatch ledger record exists for this request_id.");
+    assert(record.workflow_hash === workflowHash, "REQUEST_ID_CONFLICT", "The saved dispatch belongs to a different pinned workflow.");
+    if (record.state === "succeeded" && record.result) return record.result;
+    assert(record.state === "queued" && typeof record.prompt_id === "string" && record.prompt_id,
+      "DISPATCH_NOT_RECOVERABLE", "Only a confirmed queued job with a saved prompt_id can be recovered. Unknown submissions are never re-queued.");
+
+    const startedAt = now();
+    const context = createOperationContext({ timeoutMs, signal, now });
+    const checkActive = () => {
+      if (context.signal.aborted) throw context.signal.reason || fail("CANCELLED", "Recovery was cancelled.");
+      if (now() >= context.deadline) throw fail("RENDER_TIMEOUT", "ComfyUI recovery exceeded the configured timeout.");
+    };
+    try {
+      let historyEntry;
+      while (true) {
+        checkActive();
+        const history = await context.run((activeSignal) => transport.getHistory(record.prompt_id, { signal: activeSignal }));
+        historyEntry = history?.[record.prompt_id];
+        if (historyEntry?.status?.completed === true) break;
+        const statusText = historyEntry?.status?.status_str;
+        const hasExecutionError = (historyEntry?.status?.messages || []).some(([kind]) => kind === "execution_error");
+        if (statusText === "error" || hasExecutionError) throw fail("UPSTREAM_RENDER_FAILED", "ComfyUI reported an execution error for the saved job.");
+        await context.run((activeSignal) => sleep(Math.min(pollIntervalMs, Math.max(0, context.deadline - now())), activeSignal));
+      }
+      const output = findOutputImage(historyEntry, outputNodeId);
+      checkActive();
+      const rendered = await context.run((activeSignal) => transport.getOutput(output, { signal: activeSignal }));
+      const outputBytes = rendered instanceof Uint8Array ? rendered : new Uint8Array(rendered);
+      assert(outputBytes.byteLength > 0, "EMPTY_OUTPUT", "ComfyUI returned an empty output image.");
+      const stored = await context.run((activeSignal) => transport.storeResult({
+        requestId, bytes: outputBytes, mimeType: "image/png",
+        metadata: { source_image_ref: record.source_image_ref, provider: "comfyui", model_id: modelId, model_revision: modelRevision || null, workflow_hash: workflowHash, prompt_id: record.prompt_id, output, recovered: true },
+        signal: activeSignal
+      }));
+      assert(stored && typeof stored.image_ref === "string" && stored.image_ref, "RESULT_STORAGE_FAILED", "NEXORA result storage did not return an immutable image reference.");
+      assert(stored.image_ref !== record.source_image_ref, "SOURCE_OVERWRITE_BLOCKED", "A rendered result must be stored as a new image; the original source reference cannot be overwritten.");
+      const result = {
+        request_id: requestId, status: "succeeded", image_ref: stored.image_ref,
+        model_id: modelId, model_revision: modelRevision || null, workflow_hash: workflowHash,
+        prompt_id: record.prompt_id, elapsed_ms: Math.max(0, now() - startedAt), recovered: true
+      };
+      await dispatchStore.markSucceeded(requestId, result);
+      return result;
+    } finally {
+      context.close();
+    }
+  }
+
   return Object.freeze({
     id: "comfyui-firered-image-edit", provider: "comfyui", modelId, status: "ready",
     capabilities: Object.freeze(["image-edit", "instruction-following", "source-image-preservation"]),
-    render
+    render,
+    recover
   });
 }
