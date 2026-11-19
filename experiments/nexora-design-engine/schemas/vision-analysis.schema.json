@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nexora.invalid/schemas/vision-analysis.schema.json",
+  "title": "NEXORA Vision Analysis",
+  "description": "Uncertain visual observations from a room photograph; not a source of verified measurements.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "source_image_id", "observations", "uncertainties"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "source_image_id": { "type": "string", "minLength": 1 },
+    "model": {
+      "type": "object",
+      "properties": {
+        "provider": { "type": "string" },
+        "model_id": { "type": "string" },
+        "model_version": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "observations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["observation_id", "label", "category", "confidence", "visibility"],
+        "properties": {
+          "observation_id": { "type": "string" },
+          "label": { "type": "string" },
+          "category": {
+            "type": "string",
+            "enum": ["architecture", "opening", "surface", "furniture", "appliance", "lighting", "decor", "other"]
+          },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+          "visibility": { "type": "string", "enum": ["clear", "partial", "occluded", "ambiguous"] },
+          "image_region": {
+            "type": "object",
+            "properties": {
+              "x": { "type": "number", "minimum": 0, "maximum": 1 },
+              "y": { "type": "number", "minimum": 0, "maximum": 1 },
+              "width": { "type": "number", "minimum": 0, "maximum": 1 },
+              "height": { "type": "number", "minimum": 0, "maximum": 1 }
+            },
+            "required": ["x", "y", "width", "height"],
+            "additionalProperties": false
+          },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+    "uncertainties": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["subject", "reason"],
+        "properties": {
+          "subject": { "type": "string" },
+          "reason": { "type": "string" },
+          "recommended_confirmation": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "dimension_hypotheses": {
+      "description": "Optional visual estimates only; must never be represented as verified dimensions.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["subject", "estimate", "unit", "confidence", "status"],
+        "properties": {
+          "subject": { "type": "string" },
+          "estimate": { "type": "number" },
+          "unit": { "type": "string" },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+          "status": { "type": "string", "const": "vision_estimated" }
+        },
+        "additionalProperties": false
+      }
+    }
+  }
+}
