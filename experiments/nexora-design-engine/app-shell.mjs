@@ -26,7 +26,7 @@ button{border:0;border-radius:10px;background:var(--accent);color:white;font:600
 </style>
 </head>
 <body>
-<header><div class="brand">NEXORA<small>DESIGN ENGINE</small></div><div class="status">Отдельная версия · 1.1</div></header>
+<header><div class="brand">NEXORA<small>DESIGN ENGINE</small></div><div class="status">Отдельная версия · 1.0</div></header>
 <main>
 <section class="intro"><div class="eyebrow">Interior intelligence / image editing</div><h1>Переосмыслите своё пространство.</h1><p>Загрузите фотографию комнаты, задайте пожелания и получите три разные дизайнерские концепции. Исходное фото остаётся неизменным, каждый результат сохраняется отдельно.</p></section>
 <div class="layout">
@@ -45,7 +45,7 @@ button{border:0;border-radius:10px;background:var(--accent);color:white;font:600
 </div>
 <div class="panel" id="conceptPanel" hidden>
 <div class="step">02 / Выбор направления</div><h2>Три разные идеи</h2><div id="concepts" class="concepts"></div>
-<div class="consent"><input type="checkbox" id="consent"><label for="consent" style="margin:0;font-weight:500">Я разрешаю передать выбранную фотографию стороннему публичному сервису Hugging Face для генерации изображения. NEXORA не управляет политикой хранения данных этого сервиса. Не отправляйте конфиденциальные фотографии, если не согласны с такой обработкой.</label></div>
+<div class="consent"><input type="checkbox" id="consent"><label for="consent" style="margin:0;font-weight:500">Я разрешаю передать выбранную фотографию публичному сервису Hugging Face для генерации и Cloudflare Workers AI для проверки, что результат сохранил тип помещения. NEXORA не управляет политикой хранения данных Hugging Face. Не отправляйте конфиденциальные фотографии, если не согласны с такой обработкой.</label></div>
 <button id="render" class="full" disabled>Создать выбранные варианты</button>
 <div id="renderStatus" class="statusline" aria-live="polite"></div><div class="progress" id="progress"><i id="progressBar"></i></div>
 <p class="notice">Варианты создаются последовательно, чтобы не перегружать бесплатный публичный GPU-сервис. Лимит — 6 генераций в сутки на одно подключение.</p>
@@ -53,10 +53,10 @@ button{border:0;border-radius:10px;background:var(--accent);color:white;font:600
 </section>
 <aside>
 <div class="panel"><div class="step">03 / Результаты</div><h2>Ваши варианты дизайна</h2><div id="results" class="results"><div class="empty">Здесь появятся созданные изображения. Они сохраняются в локальной базе этого браузера.</div></div></div>
-<div class="panel"><h2>Хранение и приватность</h2><div id="providerStatus" class="notice">Проверяю доступность бесплатного генератора…</div><p class="notice">Исходное фото не сохраняется на сервере NEXORA. При запуске генерации оно передаётся выбранному внешнему сервису. Готовые изображения временно хранятся в NEXORA до 24 часов для восстановления, а затем остаются в локальной базе браузера.</p><button id="clear" class="danger full">Удалить локальные фотографии и результаты</button><div id="clearStatus" class="statusline"></div></div>
+<div class="panel"><h2>Хранение и приватность</h2><p class="notice">Исходное фото не сохраняется на сервере NEXORA. При запуске генерации оно передаётся выбранному внешнему сервису. Готовые изображения временно хранятся в NEXORA до 24 часов для восстановления, а затем остаются в локальной базе браузера.</p><button id="clear" class="danger full">Удалить локальные фотографии и результаты</button><div id="clearStatus" class="statusline"></div></div>
 </aside>
 </div>
-<div class="footer">NEXORA Design Engine 1.1 · Модель генерации: Qwen Image Edit 2511 с ускоренным Rapid-AIO V19 и Style-Transfer LoRA. Результат требует проверки архитектором: модель может ошибаться в геометрии, деталях и функциональности. Не используйте изображение как строительный чертёж.</div>
+<div class="footer">NEXORA Design Engine 1.0 · Экспериментальная модель генерации: FireRed 1.1 с дополнительными Rapid-AIO весами. Результат требует проверки архитектором: модель может ошибаться в геометрии, деталях и функциональности. Не используйте изображение как строительный чертёж.</div>
 </main>
 <script>
 const $ = (id) => document.getElementById(id);
@@ -226,7 +226,7 @@ async function fetchAndSaveResult(job, result) {
     blob,
     conceptName: result.concept_name || job.conceptName,
     createdAt: new Date().toISOString(),
-    model: result.model_id || "Qwen Image Edit 2511 + Rapid-AIO V19",
+    model: result.model_id || "FireRed 1.1 + Rapid-AIO V23",
     recovered: Boolean(result.recovered)
   });
   await dbPut("jobs", { ...job, state: "succeeded" });
@@ -257,7 +257,7 @@ async function prepareRenderBlob(blob) {
 }
 async function renderOne(concept, index, total, renderBlob) {
   const id = crypto.randomUUID();
-  const job = { id, conceptId: concept.concept_id, conceptName: concept.name, state: "submitting", createdAt: new Date().toISOString() };
+  const job = { id, conceptId: concept.concept_id, conceptName: concept.name, roomType: $("room").value, sourceBlob: renderBlob, state: "submitting", createdAt: new Date().toISOString() };
   await dbPut("jobs", job);
   const form = new FormData();
   form.append("image", renderBlob, "nexora-source.jpg");
@@ -318,7 +318,12 @@ function showRecovery(job) {
     button.disabled = true;
     setStatus("renderStatus", "Проверяю сохранённое задание…");
     try {
-      const response = await fetch("/api/jobs/" + job.id + "/recover", { method: "POST" });
+      const savedSource = job.sourceBlob || sourceBlob;
+      if (!savedSource) throw new Error("Исходная фотография отсутствует в локальном хранилище.");
+      const recoveryForm = new FormData();
+      recoveryForm.append("image", savedSource, "nexora-source.jpg");
+      recoveryForm.append("roomType", job.roomType || $("room").value);
+      const response = await fetch("/api/jobs/" + job.id + "/recover", { method: "POST", body: recoveryForm });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || "Результат пока недоступен.");
       await fetchAndSaveResult(job, { ...data, result_url: "/api/results/" + job.id, concept_name: job.conceptName });
@@ -395,8 +400,6 @@ $("render").addEventListener("click", renderSelected);
 $("clear").addEventListener("click", clearLocal);
 (async function init() {
   try {
-    const health = await fetch("/api/health").then((r) => r.json());
-    $("providerStatus").textContent = health.provider_auth_configured ? "Личный Hugging Face token подключён. Используется квота вашего бесплатного аккаунта." : "Публичная квота GPU Hugging Face ограничена. Для стабильной бесплатной работы добавьте HF_TOKEN (Read) в Secrets этого Worker; сам токен не отправляйте в чат и не вводите в форму.";
     const saved = await dbGet("source", "active");
     if (saved?.blob) setPhoto(saved.blob, saved.name);
     await renderSavedResults();

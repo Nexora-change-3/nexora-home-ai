@@ -1,7 +1,8 @@
 import { createD1DispatchStore } from "./model-adapters/dispatch-ledger.mjs";
-import { createQwen2511FastAdapter } from "./model-adapters/qwen-2511-fast-adapter.mjs";
-import { createQwen2511FastTransport } from "./model-adapters/qwen-2511-fast-transport.mjs";
+import { createFireRedTurboSpaceAdapter } from "./model-adapters/firered-turbo-space-adapter.mjs";
+import { createFireRedTurboSpaceTransport } from "./model-adapters/firered-turbo-space-transport.mjs";
 import { createDesignConcepts } from "./src/design-brain/concept-planner.mjs";
+import { verifyRoomIdentity } from "./src/quality-gate/room-identity-gate.mjs";
 import { APP_HTML } from "./app-shell.mjs";
 
 const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
@@ -9,7 +10,7 @@ const MAX_RESULT_BYTES = 1_650_000;
 const MAX_DAILY_RENDERS = 6;
 const RESULT_TTL_HOURS = 24;
 const ROOM_TYPES = new Set(["kitchen", "living_room", "bedroom", "bathroom", "hallway", "office", "studio", "other"]);
-const MODEL = "Qwen Image Edit 2511 + Rapid-AIO V19 + Style-Transfer";
+const MODEL = "FireRed 1.1 + Rapid-AIO V23 (public ZeroGPU Space)";
 
 function fail(code, message, status = 400) {
   const error = new Error(message);
@@ -134,16 +135,22 @@ function makeConcepts(input) {
   });
 }
 
-function makeAdapter(env) {
+function makeAdapter(env, sourceImage) {
   const dispatchStore = createD1DispatchStore(env.DB);
-  const transport = createQwen2511FastTransport({ maxOutputBytes: MAX_RESULT_BYTES, authToken: env.HF_TOKEN || null, debugUpstreamErrors: true });
-  return createQwen2511FastAdapter({
+  const transport = createFireRedTurboSpaceTransport({ maxOutputBytes: MAX_RESULT_BYTES, debugUpstreamErrors: true });
+  return createFireRedTurboSpaceAdapter({
     transport,
     dispatchStore,
     maxImageBytes: MAX_SOURCE_BYTES,
     timeoutMs: 150000,
     status: "ready",
     storeResult: async ({ requestId, bytes, mimeType, metadata }) => {
+      const qualityGate = await verifyRoomIdentity({
+        AI: env.AI,
+        sourceImage,
+        candidateImage: { bytes, contentType: mimeType },
+        expectedRoomType: sourceImage?.roomType
+      });
       if (bytes.byteLength > MAX_RESULT_BYTES) {
         throw fail("RESULT_TOO_LARGE", "Результат превышает безопасный размер временного хранилища. Попробуйте ещё раз позже.", 413);
       }
@@ -151,7 +158,7 @@ function makeAdapter(env) {
       const expiresAt = new Date(Date.now() + RESULT_TTL_HOURS * 60 * 60 * 1000).toISOString();
       await env.DB.prepare(
         "INSERT OR IGNORE INTO nexora_render_images (request_id, image_bytes, mime_type, metadata_json, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)"
-      ).bind(requestId, bytes, mimeType, JSON.stringify(metadata), createdAt, expiresAt).run();
+      ).bind(requestId, bytes, mimeType, JSON.stringify({ ...metadata, quality_gate: qualityGate }), createdAt, expiresAt).run();
       const stored = await env.DB.prepare(
         "SELECT request_id FROM nexora_render_images WHERE request_id = ? LIMIT 1"
       ).bind(requestId).first();
@@ -208,7 +215,7 @@ async function handleRender(request, env) {
   if (!concept) throw fail("INVALID_CONCEPT", "Выбранная концепция не найдена. Сформируйте концепции заново.");
   await env.DB.prepare("DELETE FROM nexora_render_images WHERE expires_at <= ?").bind(new Date().toISOString()).run();
   await enforceRateLimit(env, request, requestId);
-  const adapter = makeAdapter(env);
+  const adapter = makeAdapter(env, { bytes, contentType: mimeType, roomType });
   const result = await adapter.render({
     request_id: requestId,
     source_image_ref: sourceImageRef,
@@ -233,7 +240,19 @@ async function handleConcepts(request) {
 async function handleJob(request, env, id, recover = false) {
   if (!/^[0-9a-f-]{36}$/i.test(id)) throw fail("INVALID_REQUEST_ID", "Идентификатор генерации недействителен.");
   if (recover) {
-    const result = await makeAdapter(env).recover(id);
+    const form = await request.formData();
+    const file = form.get("image");
+    if (!file || typeof file.arrayBuffer !== "function" || file.size <= 0 || file.size > MAX_SOURCE_BYTES) {
+      throw fail("RECOVERY_SOURCE_REQUIRED", "Для проверки и восстановления приложите сохранённую исходную фотографию.", 400);
+    }
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const mimeType = sniffImageMime(bytes);
+    if (!mimeType || (file.type && file.type !== mimeType)) throw fail("UNSUPPORTED_IMAGE_TYPE", "Исходная фотография для восстановления повреждена или имеет неподдерживаемый формат.");
+    const sourceImageRef = "sha256:" + await sha256(bytes);
+    const dispatch = await env.DB.prepare("SELECT source_image_ref FROM nexora_render_dispatches WHERE request_id = ? LIMIT 1").bind(id).first();
+    if (!dispatch || dispatch.source_image_ref !== sourceImageRef) throw fail("RECOVERY_SOURCE_MISMATCH", "Для этого задания требуется именно исходная фотография, использованная при генерации.", 409);
+    const roomType = String(form.get("roomType") || "other");
+    const result = await makeAdapter(env, { bytes, contentType: mimeType, roomType }).recover(id);
     return json(result);
   }
   const row = await env.DB.prepare(
@@ -287,10 +306,9 @@ export default {
         return json({
           ok: true,
           app: "NEXORA Design Engine",
-          version: "1.1.0",
+          version: "1.0.0",
           provider: "huggingface-zero-gpu",
           model: MODEL,
-          provider_auth_configured: Boolean(env.HF_TOKEN),
           output_storage: "Cloudflare D1 temporary; browser IndexedDB persistent",
           result_ttl_hours: RESULT_TTL_HOURS,
           max_daily_renders_per_ip: MAX_DAILY_RENDERS
@@ -305,7 +323,7 @@ export default {
       if (result && ["GET", "DELETE"].includes(request.method)) return await handleResult(request, env, result[1]);
       return json({ error: "NOT_FOUND", message: "Страница не найдена." }, 404);
     } catch (error) {
-      const status = Number.isInteger(error.status) ? error.status : error.code === "ZERO_GPU_QUOTA_EXCEEDED" ? 429 : error.code === "PROMPT_REJECTED" ? 422 : 500;
+      const status = Number.isInteger(error.status) ? error.status : 500;
       const code = error.code || "INTERNAL_ERROR";
       if (status >= 500) console.error("NEXORA_ENGINE_ERROR", code);
       const payload = {
