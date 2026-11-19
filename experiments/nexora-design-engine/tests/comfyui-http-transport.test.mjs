@@ -96,17 +96,21 @@ test("rejects non-PNG output even when the endpoint responds successfully", asyn
 });
 
 
-test("cancels only the specified queued or running prompt", async () => {
+test("removes only the specified pending prompt and never interrupts the shared worker", async () => {
   const calls = [];
   const transport = createComfyUiHttpTransport({ ...base, fetchImpl: async (url, init) => {
     calls.push({ url, init });
     return responses(null, 200);
   }});
   const result = await transport.cancelPrompt("job_123");
-  assert.deepEqual(result, { requested: true, prompt_id: "job_123" });
-  assert.deepEqual(calls.map(({ url }) => new URL(url).pathname), ["/queue", "/interrupt"]);
+  assert.deepEqual(result, {
+    requested: true,
+    prompt_id: "job_123",
+    scope: "pending_queue_only",
+    running_execution_stopped: false
+  });
+  assert.deepEqual(calls.map(({ url }) => new URL(url).pathname), ["/queue"]);
   assert.deepEqual(JSON.parse(calls[0].init.body), { delete: ["job_123"] });
-  assert.deepEqual(JSON.parse(calls[1].init.body), { prompt_id: "job_123" });
   assert.ok(calls.every(({ init }) => init.headers.Authorization === "Bearer test-token"));
   await assert.rejects(() => transport.cancelPrompt("../other"), { code: "INVALID_PROMPT_ID" });
 });

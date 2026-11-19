@@ -121,11 +121,16 @@ export function createComfyUiHttpTransport({
         }, "CANCEL_FAILED", "ComfyUI could not cancel the render job.");
         if (!response.ok) throw fail("CANCEL_FAILED", "ComfyUI could not cancel the render job.");
       };
-      await Promise.all([
-        post("/queue", { delete: [promptId] }),
-        post("/interrupt", { prompt_id: promptId })
-      ]);
-      return { requested: true, prompt_id: promptId };
+      // /interrupt is server-wide in stock ComfyUI and can stop another
+      // user's active workflow. Only remove this prompt from the pending queue.
+      // A running workflow is not safely cancellable without an isolated worker.
+      await post("/queue", { delete: [promptId] });
+      return {
+        requested: true,
+        prompt_id: promptId,
+        scope: "pending_queue_only",
+        running_execution_stopped: false
+      };
     },
 
     async getHistory(promptId, { signal } = {}) {

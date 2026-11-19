@@ -69,11 +69,17 @@ A failed or timed-out job must return a terminal failure status and sanitized er
 
 ## Tests required
 
-- Successful upload → queue → history → output round trip using a fake ComfyUI server.
+- Successful upload â queue â history â output round trip using a fake ComfyUI server.
 - Queue validation failure.
 - Upstream authentication failure.
 - Missing output node/image.
 - Timeout and cancellation.
+
+### Cancellation safety
+
+Stock ComfyUI's `POST /interrupt` stops the current server execution; it is not a safe per-job cancellation primitive for a shared worker. The NEXORA transport therefore removes only the specified pending prompt through `POST /queue` with `delete: [prompt_id]` and never calls `/interrupt`.
+
+If a prompt is already running, NEXORA may stop waiting locally, but must not claim that GPU execution stopped. A true running-job cancellation requires a dedicated isolated ComfyUI worker for that job, or a provider API with verified per-job cancellation semantics. Do not share a worker and send a global interrupt.
 - Duplicate request handling / idempotency.
 - No source-image overwrite.
 - URL allowlist and MIME/size validation.
