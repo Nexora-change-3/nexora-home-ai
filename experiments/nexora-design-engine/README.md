@@ -1,6 +1,6 @@
 # NEXORA DESIGN ENGINE — экспериментальный контур
 
-Статус: программный каркас v0.2. Vision adapter boundary и тесты добавлены; реальные vision/image models и генеративные модели пока не подключены. Production-интеграции нет.
+Статус: программный каркас v0.3. Добавлены общий vision boundary и конкретный адаптер Cloudflare Workers AI / Moondream 3.1. Модель не вызывалась на реальном изображении; Production-интеграции нет.
 
 ## Назначение
 
@@ -31,17 +31,19 @@
 - [x] Детерминированный Design Brain scaffold: три отличающихся направления — architectural, organic, expressive.
 - [x] Constraint resolver с приоритетом user > verified measurement > vision.
 - [x] Vision Analysis JSON Schema с confidence, uncertainty и только гипотетическими размерами.
-- [x] Provider-neutral Vision Adapter Boundary: проверка исходного image ID, формата и байтов; копирование исходных байтов; проверка наблюдений, confidence и областей изображения.
+- [x] Provider-neutral Vision Adapter Boundary: проверка исходного image ID, формата и байтов; копирование исходных байтов; проверка наблюдений и областей изображения.
+- [x] Адаптер Cloudflare Workers AI для Moondream 3.1: передача оригинала как base64 data URI, запрос структурированного анализа, fail-closed разбор JSON.
 - [x] Защита от подмены исходной фотографии и от повышения визуальных оценок размеров до verified measurements.
 - [x] Quality Gate с весами, порогом и критическими блокировками.
 - [x] Проверка различий между тремя концепциями.
-- [x] GitHub Actions workflow автоматически запускает dependency-free тесты при изменениях в экспериментальной ветке.
+- [x] GitHub Actions автоматически запускает dependency-free тесты при изменениях в экспериментальной ветке.
 
 ## Что ещё не реализовано
 
-- [ ] Конкретный vision provider adapter, который действительно анализирует пиксели.
+- [ ] Реальный вызов Moondream на оригинальной фотографии пользователя и проверка качества распознавания.
+- [ ] Оценка стоимости и latency на фактическом запросе перед любым включением в рабочий контур.
 - [ ] AI Design Brain, который рассуждает о помещении и обогащает концепции.
-- [ ] Адаптеры FireRed, Qwen, LongCat и HiDream.
+- [ ] Адаптеры FireRed, Qwen, LongCat и HiDream для генерации/редактирования изображений.
 - [ ] Render Orchestrator и журнал запусков.
 - [ ] Проверка геометрии по фактическим результатам изображений.
 - [ ] Сравнительное испытание на оригинальной фотографии пользователя.
@@ -56,6 +58,7 @@
 - `src/design-brain/` — построение концепций.
 - `src/constraints/` — разрешение конфликтов ограничений.
 - `src/quality-gate/` — оценка и блокировка критических дефектов.
+- `model-adapters/workers-ai-moondream.mjs` — адаптер Moondream 3.1.
 - `model-adapters/` — контракты подключаемых моделей.
 - `evaluation/PROTOCOL.md` — одинаковые условия испытаний.
 - `tests/` — автоматические unit tests.
@@ -69,7 +72,7 @@ node --test experiments/nexora-design-engine/tests/*.test.mjs
 
 Workflow: [NEXORA Design Engine tests](https://github.com/Nexora-change-3/nexora-home-ai/actions/workflows/nexora-design-engine-tests.yml).
 
-**Важно:** Vision Adapter Boundary — это пока валидатор и интерфейс, а не подключённая нейросеть. Никакие пиксели пользовательской фотографии ещё не анализировались.
+**Важно:** тесты Moondream сейчас используют поддельный Workers AI binding и проверяют контракт/преобразование данных. Это не инференс модели и не доказательство качества распознавания. Модель не вызывалась на пользовательском фото.
 
 ## Принцип разработки
 
