@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { createComfyUiRenderAdapter } from "../model-adapters/comfyui-render-adapter.mjs";
+import { createMemoryDispatchStore } from "../model-adapters/dispatch-ledger.mjs";
 
 function stableStringify(value) {
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
@@ -155,4 +156,23 @@ test("refuses to overwrite the original source image reference", async () => {
     }
   });
   await assert.rejects(adapter.render(request), { code: "SOURCE_OVERWRITE_BLOCKED" });
+});
+
+
+test("recreated adapters consult the shared dispatch ledger and never requeue an ambiguous submission", async () => {
+  const dispatchStore = createMemoryDispatchStore();
+  const first = setup({ options: { dispatchStore }, transport: { async queuePrompt() { throw new TypeError("connection lost after server accepted"); } } });
+  await assert.rejects(first.adapter.render(first.request), { code: "QUEUE_OUTCOME_UNKNOWN" });
+  const second = setup({ options: { dispatchStore } });
+  await assert.rejects(second.adapter.render(second.request), { code: "DUPLICATE_SUBMISSION_BLOCKED" });
+  assert.equal(second.calls.length, 0);
+});
+
+test("rejects reuse of a request_id for a different source image", async () => {
+  const dispatchStore = createMemoryDispatchStore();
+  const first = setup({ options: { dispatchStore } });
+  await first.adapter.render(first.request);
+  const second = setup({ options: { dispatchStore } });
+  await assert.rejects(second.adapter.render({ ...second.request, source_image_ref: "nexora://source/other" }), { code: "REQUEST_ID_CONFLICT" });
+  assert.equal(second.calls.length, 0);
 });

@@ -1,3 +1,5 @@
+import { createMemoryDispatchStore } from "./dispatch-ledger.mjs";
+
 const DEFAULT_MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
@@ -107,7 +109,7 @@ function createOperationContext({ timeoutMs, signal, now, onAbort }) {
 export function createComfyUiRenderAdapter({
   transport, workflow, nodeInputs, outputNodeId, modelId, modelRevision, workflowHash,
   maxImageBytes = DEFAULT_MAX_IMAGE_BYTES, timeoutMs = 10 * 60 * 1000, pollIntervalMs = 1000,
-  now = () => Date.now(), cryptoImpl = globalThis.crypto,
+  now = () => Date.now(), cryptoImpl = globalThis.crypto, dispatchStore = createMemoryDispatchStore(),
   sleep = (ms, signal) => new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(signal.reason || fail("CANCELLED", "Render was cancelled."));
     const timer = setTimeout(resolve, ms);
@@ -115,6 +117,7 @@ export function createComfyUiRenderAdapter({
   })
 } = {}) {
   assert(transport && ["uploadImage", "queuePrompt", "getHistory", "getOutput", "storeResult"].every((key) => typeof transport[key] === "function"), "INVALID_TRANSPORT", "ComfyUI transport must implement uploadImage, queuePrompt, getHistory, getOutput and storeResult.");
+  assert(dispatchStore && ["get", "claim", "markUnknown", "markQueued", "markSucceeded"].every((key) => typeof dispatchStore[key] === "function"), "INVALID_DISPATCH_STORE", "Dispatch store must implement get, claim, markUnknown, markQueued and markSucceeded.");
   assert(workflow && typeof workflow === "object" && !Array.isArray(workflow), "INVALID_WORKFLOW", "A pinned API-format workflow object is required.");
   assert(nodeInputs?.image && nodeInputs?.prompt, "INVALID_WORKFLOW_MAPPING", "Image and prompt node mappings are required.");
   assert(typeof modelId === "string" && modelId && typeof workflowHash === "string" && /^sha256:[a-f0-9]{64}$/.test(workflowHash), "INVALID_PROVENANCE", "Model ID and a full SHA-256 workflow hash are required.");
@@ -132,8 +135,13 @@ export function createComfyUiRenderAdapter({
     const requestId = request.request_id;
     if (completed.has(requestId)) return completed.get(requestId);
     assert(!inFlight.has(requestId), "DUPLICATE_REQUEST_IN_PROGRESS", "A render with this request_id is already running.");
-    const priorSubmission = submissions.get(requestId);
-    assert(!priorSubmission, "DUPLICATE_SUBMISSION_BLOCKED", priorSubmission?.state === "outcome_unknown"
+    const priorSubmission = await dispatchStore.get(requestId);
+    if (priorSubmission) {
+      assert(priorSubmission.source_image_ref === request.source_image_ref && priorSubmission.workflow_hash === workflowHash,
+        "REQUEST_ID_CONFLICT", "This request_id is already bound to a different source image or workflow.");
+      if (priorSubmission.state === "succeeded" && priorSubmission.result) return priorSubmission.result;
+    }
+    assert(!priorSubmission, "DUPLICATE_SUBMISSION_BLOCKED", priorSubmission?.state === "submitting" || priorSubmission?.state === "outcome_unknown"
       ? "A previous queue submission has an unknown outcome. Reconcile the existing ComfyUI job before retrying."
       : "This request_id has already been submitted to ComfyUI and cannot be queued again.");
     const operation = runRender(request);
@@ -175,17 +183,18 @@ export function createComfyUiRenderAdapter({
       if (nodeInputs.seed && request.seed !== undefined && request.seed !== null) applyNodeInput(apiWorkflow, nodeInputs.seed, request.seed, false);
       checkActive();
 
-      submissions.set(request.request_id, { state: "submitting", started_at: now() });
+      const claimed = await dispatchStore.claim({ requestId: request.request_id, sourceImageRef: request.source_image_ref, workflowHash });
+      assert(claimed, "DUPLICATE_SUBMISSION_BLOCKED", "This request_id already has a durable dispatch record and cannot be queued again.");
       let queued;
       try {
         queued = await context.run((signal) => transport.queuePrompt({ workflow: apiWorkflow, clientId: request.request_id, signal }));
       } catch {
-        submissions.set(request.request_id, { state: "outcome_unknown", started_at: now() });
-        throw fail("QUEUE_OUTCOME_UNKNOWN", "The queue response was not confirmed. The request is blocked from resubmission to prevent duplicate generation.");
+        await dispatchStore.markUnknown(request.request_id).catch(() => {});
+        throw fail("QUEUE_OUTCOME_UNKNOWN", "The queue response was not confirmed. The durable dispatch record blocks resubmission to prevent duplicate generation.");
       }
-      assert(queued && typeof queued.prompt_id === "string" && queued.prompt_id, "QUEUE_OUTCOME_UNKNOWN", "ComfyUI returned no usable prompt_id. The request is blocked from resubmission.");
+      assert(queued && typeof queued.prompt_id === "string" && queued.prompt_id, "QUEUE_OUTCOME_UNKNOWN", "ComfyUI returned no usable prompt_id. The durable dispatch record blocks resubmission.");
       activePromptId = queued.prompt_id;
-      submissions.set(request.request_id, { state: "queued", prompt_id: queued.prompt_id, started_at: now() });
+      await dispatchStore.markQueued(request.request_id, queued.prompt_id);
       if (context.signal.aborted) {
         await transport.cancelPrompt?.(activePromptId);
         throw context.signal.reason || fail("CANCELLED", "Render was cancelled.");
@@ -214,11 +223,14 @@ export function createComfyUiRenderAdapter({
       }));
       assert(stored && typeof stored.image_ref === "string" && stored.image_ref, "RESULT_STORAGE_FAILED", "NEXORA result storage did not return an immutable image reference.");
       assert(stored.image_ref !== request.source_image_ref, "SOURCE_OVERWRITE_BLOCKED", "A rendered result must be stored as a new image; the original source reference cannot be overwritten.");
-      return {
+      const result = {
         request_id: request.request_id, status: "succeeded", image_ref: stored.image_ref,
         model_id: modelId, model_revision: modelRevision || null, workflow_hash: workflowHash,
         prompt_id: queued.prompt_id, elapsed_ms: Math.max(0, now() - startedAt)
       };
+      await dispatchStore.markSucceeded(request.request_id, result);
+      return result;
+
     } finally {
       context.close();
     }
