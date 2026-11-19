@@ -41,6 +41,20 @@ test("reports missing required inputs instead of submitting an invalid workflow"
   assert.ok(result.missing_required_inputs.some((item) => item.class_type === "KSampler" && item.input === "extra_required_input"));
 });
 
+test("rejects workflow inputs not declared by the live ComfyUI node schema", () => {
+  const changedWorkflow = structuredClone(workflow);
+  changedWorkflow["167:130"].inputs.nexora_unknown_input = "unexpected";
+  const result = inspectFireRed11Runtime({
+    workflow: changedWorkflow,
+    objectInfo,
+    modelInventory
+  });
+  assert.equal(result.compatible, false);
+  assert.ok(result.unknown_inputs.some((item) =>
+    item.node_id === "167:130" && item.input === "nexora_unknown_input"
+  ));
+});
+
 test("reports absent model files and unqueried model folders separately", () => {
   const changed = { ...modelInventory, loras: [] };
   delete changed.vae;

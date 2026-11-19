@@ -24,6 +24,7 @@ export function inspectFireRed11Runtime({ workflow, objectInfo, modelInventory =
   assert(workflow && objectInfo && typeof objectInfo === "object", "INVALID_RUNTIME_INFO", "A workflow and live ComfyUI object_info response are required.");
   const missingNodes = [];
   const missingRequiredInputs = [];
+  const unknownInputs = [];
   const experimentalNodes = [];
   for (const [nodeId, workflowNode] of Object.entries(workflow)) {
     const definition = objectInfo[workflowNode.class_type];
@@ -33,11 +34,23 @@ export function inspectFireRed11Runtime({ workflow, objectInfo, modelInventory =
     }
     if (definition.experimental === true) experimentalNodes.push({ node_id: nodeId, class_type: workflowNode.class_type });
     const required = definition.input?.required;
-    if (required && typeof required === "object" && !Array.isArray(required)) {
-      for (const inputName of Object.keys(required)) {
-        if (!Object.prototype.hasOwnProperty.call(workflowNode.inputs || {}, inputName)) {
-          missingRequiredInputs.push({ node_id: nodeId, class_type: workflowNode.class_type, input: inputName });
-        }
+    const optional = definition.input?.optional;
+    const requiredNames = required && typeof required === "object" && !Array.isArray(required)
+      ? Object.keys(required)
+      : [];
+    const optionalNames = optional && typeof optional === "object" && !Array.isArray(optional)
+      ? Object.keys(optional)
+      : [];
+    const allowedNames = new Set([...requiredNames, ...optionalNames]);
+
+    for (const inputName of requiredNames) {
+      if (!Object.prototype.hasOwnProperty.call(workflowNode.inputs || {}, inputName)) {
+        missingRequiredInputs.push({ node_id: nodeId, class_type: workflowNode.class_type, input: inputName });
+      }
+    }
+    for (const inputName of Object.keys(workflowNode.inputs || {})) {
+      if (!allowedNames.has(inputName)) {
+        unknownInputs.push({ node_id: nodeId, class_type: workflowNode.class_type, input: inputName });
       }
     }
   }
@@ -57,13 +70,14 @@ export function inspectFireRed11Runtime({ workflow, objectInfo, modelInventory =
     }
     if (!modelNames(modelInventory[asset.folder]).includes(asset.name)) missingAssets.push(asset);
   }
-  const compatible = missingNodes.length === 0 && missingRequiredInputs.length === 0 && missingAssets.length === 0 && unverifiedAssetFolders.length === 0;
+  const compatible = missingNodes.length === 0 && missingRequiredInputs.length === 0 && unknownInputs.length === 0 && missingAssets.length === 0 && unverifiedAssetFolders.length === 0;
   return Object.freeze({
     compatible,
     status: compatible ? (experimentalNodes.length ? "compatible_with_experimental_nodes" : "compatible") : "incompatible_or_incomplete",
     node_count: Object.keys(workflow).length,
     missing_nodes: Object.freeze(missingNodes),
     missing_required_inputs: Object.freeze(missingRequiredInputs),
+    unknown_inputs: Object.freeze(unknownInputs),
     experimental_nodes: Object.freeze(experimentalNodes),
     missing_model_assets: Object.freeze(missingAssets),
     unverified_model_folders: Object.freeze([...new Set(unverifiedAssetFolders)]),
