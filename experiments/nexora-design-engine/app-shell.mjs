@@ -53,7 +53,10 @@ button{border:0;border-radius:10px;background:var(--accent);color:white;font:600
 </section>
 <aside>
 <div class="panel"><div class="step">03 / Результаты</div><h2>Ваши варианты дизайна</h2><div id="results" class="results"><div class="empty">Здесь появятся созданные изображения. Они сохраняются в локальной базе этого браузера.</div></div></div>
-<div class="panel"><h2>Хранение и приватность</h2><div id="providerStatus" class="notice">Проверяю доступность бесплатного генератора…</div><p class="notice">Исходное фото не сохраняется на сервере NEXORA. При запуске генерации оно передаётся выбранному внешнему сервису. Готовые изображения временно хранятся в NEXORA до 24 часов для восстановления, а затем остаются в локальной базе браузера.</p><button id="clear" class="danger full">Удалить локальные фотографии и результаты</button><div id="clearStatus" class="statusline"></div></div>
+<div class="panel"><h2>Хранение и приватность</h2><div id="providerStatus" class="notice">Проверяю доступность бесплатного генератора…</div>
+<label for="hfToken">Бесплатный Hugging Face Read token (если публичная квота исчерпана)</label>
+<input id="hfToken" type="password" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="hf_…">
+<div class="hint"><a href="https://huggingface.co/settings/tokens/new?tokenType=read" target="_blank" rel="noopener noreferrer">Создать бесплатный Read token</a>. Токен действует только в открытой вкладке: не сохраняется в IndexedDB, не отправляется в чат и не записывается в журналы.</div><p class="notice">Исходное фото не сохраняется на сервере NEXORA. При запуске генерации оно передаётся выбранному внешнему сервису. Готовые изображения временно хранятся в NEXORA до 24 часов для восстановления, а затем остаются в локальной базе браузера.</p><button id="clear" class="danger full">Удалить локальные фотографии и результаты</button><div id="clearStatus" class="statusline"></div></div>
 </aside>
 </div>
 <div class="footer">NEXORA Design Engine 1.1 · Модель генерации: Qwen Image Edit 2511 с ускоренным Rapid-AIO V19 и Style-Transfer LoRA. Результат требует проверки архитектором: модель может ошибаться в геометрии, деталях и функциональности. Не используйте изображение как строительный чертёж.</div>
@@ -271,7 +274,9 @@ async function renderOne(concept, index, total, renderBlob) {
   form.append("preserve", lines("preserve"));
   form.append("replaceable", lines("replace"));
   form.append("conceptId", concept.concept_id);
-  const response = await fetch("/api/render", { method: "POST", body: form });
+  const hfToken = $("hfToken").value.trim();
+  const headers = hfToken ? { "X-HF-Token": hfToken } : {};
+  const response = await fetch("/api/render", { method: "POST", body: form, headers });
   const data = await response.json();
   if (!response.ok) {
     await dbPut("jobs", { ...job, state: data.error || "failed", message: data.message });
@@ -318,7 +323,9 @@ function showRecovery(job) {
     button.disabled = true;
     setStatus("renderStatus", "Проверяю сохранённое задание…");
     try {
-      const response = await fetch("/api/jobs/" + job.id + "/recover", { method: "POST" });
+      const hfToken = $("hfToken").value.trim();
+      const headers = hfToken ? { "X-HF-Token": hfToken } : {};
+      const response = await fetch("/api/jobs/" + job.id + "/recover", { method: "POST", headers });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || "Результат пока недоступен.");
       await fetchAndSaveResult(job, { ...data, result_url: "/api/results/" + job.id, concept_name: job.conceptName });
@@ -390,13 +397,25 @@ $("photo").addEventListener("change", async (event) => {
   setPhoto(file, file.name);
 });
 $("plan").addEventListener("click", planConcepts);
+let workerTokenConfigured = false;
+$("hfToken").addEventListener("input", () => {
+  const entered = $("hfToken").value.trim();
+  $("providerStatus").textContent = entered
+    ? "Личный токен введён для этой вкладки. Он будет передан через защищённый Worker в Hugging Face и не сохранится после закрытия страницы."
+    : workerTokenConfigured
+      ? "Личный HF_TOKEN уже настроен в Worker. Поле ниже можно оставить пустым."
+      : "Публичная квота GPU Hugging Face ограничена. Для продолжения без оплаты создайте бесплатный Read token и вставьте его сюда.";
+});
 $("consent").addEventListener("change", updateRenderButton);
 $("render").addEventListener("click", renderSelected);
 $("clear").addEventListener("click", clearLocal);
 (async function init() {
   try {
     const health = await fetch("/api/health").then((r) => r.json());
-    $("providerStatus").textContent = health.provider_auth_configured ? "Личный Hugging Face token подключён. Используется квота вашего бесплатного аккаунта." : "Публичная квота GPU Hugging Face ограничена. Для стабильной бесплатной работы добавьте HF_TOKEN (Read) в Secrets этого Worker; сам токен не отправляйте в чат и не вводите в форму.";
+    workerTokenConfigured = Boolean(health.provider_auth_configured);
+    $("providerStatus").textContent = workerTokenConfigured
+      ? "Личный Hugging Face token подключён в Worker. Используется квота вашего бесплатного аккаунта."
+      : "Публичная квота GPU Hugging Face ограничена. Для продолжения без оплаты можно создать бесплатный Read token и вставить его в поле ниже. Он не сохраняется в браузере.";
     const saved = await dbGet("source", "active");
     if (saved?.blob) setPhoto(saved.blob, saved.name);
     await renderSavedResults();
