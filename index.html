@@ -67,7 +67,19 @@ $('planFile').onchange=async e=>{const file=e.target.files[0];if(!file||!selecte
 async function renderEstimate(room,holder){const c=calc(room),saved=(await byIndex('estimates','roomId',room.id))[0]||{roomId:room.id,floorPrice:0,wallPrice:0,ceilingPrice:0,reserve:10,currency:'GBP'};holder.innerHTML='<div class="estimate-box"><h4>Предварительная смета</h4><div class="muted">Количество рассчитано по размерам помещения. Введите цены материалов за м². Это ваши цены, не проверка рыночных предложений.</div><div class="estimate-grid"><label>Пол · '+c.floor.toFixed(2)+' м²<input type="number" min="0" step="0.01" data-price="floorPrice" value="'+(saved.floorPrice||0)+'"></label><label>Стены · '+c.wall.toFixed(2)+' м²<input type="number" min="0" step="0.01" data-price="wallPrice" value="'+(saved.wallPrice||0)+'"></label><label>Потолок · '+c.ceiling.toFixed(2)+' м²<input type="number" min="0" step="0.01" data-price="ceilingPrice" value="'+(saved.ceilingPrice||0)+'"></label><label>Запас материала, %<input type="number" min="0" max="100" step="1" data-price="reserve" value="'+(saved.reserve??10)+'"></label><label>Валюта<input type="text" maxlength="8" data-price="currency" value="'+safe(saved.currency||'GBP')+'"></label></div><div class="estimate-total">Итого по материалам: <strong data-total></strong></div><div class="notice">Не включает работу мастеров, доставку, демонтаж и дополнительные расходы.</div></div>';const fields=[...holder.querySelectorAll('[data-price]')],total=holder.querySelector('[data-total]');const update=async()=>{const values={roomId:room.id};for(const f of fields)values[f.dataset.price]=f.dataset.price==='currency'?f.value.trim().slice(0,8):Math.max(0,Number(f.value)||0);values.reserve=Math.min(100,values.reserve||0);const sum=(c.floor*values.floorPrice+c.wall*values.wallPrice+c.ceiling*values.ceilingPrice)*(1+values.reserve/100);total.textContent=sum.toFixed(2)+' '+(values.currency||'');saved.id=await put('estimates',{...saved,...values})};for(const f of fields)f.addEventListener('change',update);const reserve=Math.min(100,Number(saved.reserve)||0),sum=(c.floor*(Number(saved.floorPrice)||0)+c.wall*(Number(saved.wallPrice)||0)+c.ceiling*(Number(saved.ceilingPrice)||0))*(1+reserve/100);total.textContent=sum.toFixed(2)+' '+(saved.currency||'GBP')}
 
 const AI_SETTINGS_KEY='nexora_home_ai_cloudflare_settings';
-function getAISettings(){try{return JSON.parse(localStorage.getItem(AI_SETTINGS_KEY)||'{}')}catch{return {}}}
+function getAISettings(){
+  try{
+    const value=JSON.parse(localStorage.getItem(AI_SETTINGS_KEY)||'{}');
+    if(value&&typeof value.key==='string')value.key=value.key.trim();
+    return value||{};
+  }catch{return {}}
+}
+function validateAIKeyHeader(key){
+  if(typeof key!=='string'||!key.length)return 'Ключ доступа не сохранён. Откройте настройки AI и сохраните ключ заново.';
+  if(/[\r\n\0-\x1F\x7F]/.test(key))return 'В сохранённом ключе обнаружены невидимые управляющие символы. Скопируйте ключ заново без переносов строк и сохраните настройки.';
+  if(/[^\x21-\x7E]/.test(key))return 'В сохранённом ключе есть символы, которые Safari не разрешает передавать в HTTP-заголовке. Скопируйте исходный ключ заново и сохраните настройки.';
+  return '';
+}
 function cloneRequestForm(source){
   const copy=new FormData();
   for(const [name,value] of source.entries()){
@@ -82,7 +94,7 @@ function sendCloudflareRequestXHR(form,settings){
     xhr.open('POST','/api/generate',true);
     xhr.responseType='blob';
     xhr.timeout=180000;
-    xhr.setRequestHeader('X-NEXORA-KEY',settings.key);
+    xhr.setRequestHeader('X-NEXORA-KEY',settings.key.trim());
     xhr.onload=()=>{
       const contentType=xhr.getResponseHeader('Content-Type')||'application/octet-stream';
       resolve(new Response(xhr.response,{status:xhr.status,statusText:xhr.statusText,headers:{'Content-Type':contentType}}));
@@ -94,11 +106,13 @@ function sendCloudflareRequestXHR(form,settings){
   });
 }
 async function sendCloudflareRequest(form,settings){
+  const keyProblem=validateAIKeyHeader(settings&&settings.key);
+  if(keyProblem)throw new Error(keyProblem);
   let proxyError=null;
   const formInfo=()=>Array.from(form.entries()).map(([name,value])=>({name,type:typeof value==='string'?'text':(value.type||'blob'),size:typeof value==='string'?value.length:value.size}));
   const describe=e=>({name:e&&e.name||'Error',message:e&&e.message||String(e),stack:e&&e.stack?String(e.stack).split('\n').slice(0,4).join(' | '):''});
   try{
-    const response=await fetch('/api/generate',{method:'POST',headers:{'X-NEXORA-KEY':settings.key},body:cloneRequestForm(form),cache:'no-store'});
+    const response=await fetch('/api/generate',{method:'POST',headers:{'X-NEXORA-KEY':settings.key.trim()},body:cloneRequestForm(form),cache:'no-store'});
     if(response.status!==502)return response;
     let data=null;try{data=await response.clone().json()}catch{}
     const message=String(data&&data.error||'');
@@ -106,7 +120,7 @@ async function sendCloudflareRequest(form,settings){
     proxyError=new Error(message);
   }catch(error){proxyError=error}
   try{
-    return await fetch(settings.endpoint,{method:'POST',headers:{'X-NEXORA-KEY':settings.key},body:cloneRequestForm(form),mode:'cors',credentials:'omit',cache:'no-store'});
+    return await fetch(settings.endpoint,{method:'POST',headers:{'X-NEXORA-KEY':settings.key.trim()},body:cloneRequestForm(form),mode:'cors',credentials:'omit',cache:'no-store'});
   }catch(directError){
     const bypassActive=new URLSearchParams(location.search).get('nexora-sw-bypass')==='1';
     if(navigator.serviceWorker&&navigator.serviceWorker.controller&&!bypassActive){
