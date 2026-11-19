@@ -3,7 +3,7 @@ import { createMemoryDispatchStore } from "../model-adapters/dispatch-ledger.mjs
 import { createFireRedTurboSpaceAdapter } from "../model-adapters/firered-turbo-space-adapter.mjs";
 import { createFireRedTurboSpaceTransport } from "../model-adapters/firered-turbo-space-transport.mjs";
 
-const sourceUrl = "https://commons.wikimedia.org/wiki/Special:Redirect/file/Kitchen_interior_design.jpg";
+const sourceUrl = "https://upload.wikimedia.org/wikipedia/commons/f/f2/Kitchen_interior_design.jpg";
 const sourceResponse = await fetch(sourceUrl, {
   headers: {
     "user-agent": "NEXORA-Design-Engine-smoke-test/1.0",
