@@ -1,0 +1,28 @@
+name: FireRed Space API preflight
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-space:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Inspect public FireRed Space API (no image upload, no inference)
+        run: |
+          python -m pip install --disable-pip-version-check --no-cache-dir gradio_client
+          python - <<'PY'
+          from gradio_client import Client
+          space = "FireRedTeam/FireRed-Image-Edit-1.1"
+          client = Client(space, verbose=False)
+          print("SPACE_CONNECTED", client.src)
+          api = client.view_api(return_format="dict")
+          print("API_SCHEMA", api)
+          PY
