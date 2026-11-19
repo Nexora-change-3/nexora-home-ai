@@ -63,7 +63,7 @@ function findOutputImage(historyEntry, outputNodeId) {
   return { filename: image.filename, subfolder: typeof image.subfolder === "string" ? image.subfolder : "", type: typeof image.type === "string" ? image.type : "output" };
 }
 
-function createOperationContext({ timeoutMs, signal, now }) {
+function createOperationContext({ timeoutMs, signal, now, onAbort }) {
   const controller = new AbortController();
   let rejectAbort;
   const aborted = new Promise((_, reject) => { rejectAbort = reject; });
@@ -71,6 +71,7 @@ function createOperationContext({ timeoutMs, signal, now }) {
   const abort = (error) => {
     if (!controller.signal.aborted) controller.abort(error);
     rejectAbort(error);
+    try { Promise.resolve(onAbort?.(error)).catch(() => {}); } catch {}
   };
   const timer = setTimeout(() => abort(fail("RENDER_TIMEOUT", "ComfyUI render exceeded the configured timeout.")), timeoutMs);
   const onAbort = () => abort(fail("CANCELLED", "Render was cancelled."));
@@ -128,7 +129,11 @@ export function createComfyUiRenderAdapter({
 
   async function runRender(request) {
     const startedAt = now();
-    const context = createOperationContext({ timeoutMs, signal: request.signal, now });
+    let activePromptId = null;
+    const context = createOperationContext({
+      timeoutMs, signal: request.signal, now,
+      onAbort: () => activePromptId ? transport.cancelPrompt?.(activePromptId) : undefined
+    });
     const { bytes, mimeType } = validateRequest(request, maxImageBytes);
     const checkActive = () => {
       if (context.signal.aborted) throw context.signal.reason || fail("CANCELLED", "Render was cancelled.");
@@ -152,6 +157,11 @@ export function createComfyUiRenderAdapter({
 
       const queued = await context.run((signal) => transport.queuePrompt({ workflow: apiWorkflow, clientId: request.request_id, signal }));
       assert(queued && typeof queued.prompt_id === "string" && queued.prompt_id, "QUEUE_FAILED", "ComfyUI did not acknowledge the render job.");
+      activePromptId = queued.prompt_id;
+      if (context.signal.aborted) {
+        await transport.cancelPrompt?.(activePromptId);
+        throw context.signal.reason || fail("CANCELLED", "Render was cancelled.");
+      }
       let historyEntry;
       while (true) {
         checkActive();

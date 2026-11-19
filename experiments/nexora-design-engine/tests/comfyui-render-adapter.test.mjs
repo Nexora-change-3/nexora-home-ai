@@ -129,3 +129,20 @@ test("snapshots the workflow at construction and ignores later caller mutation",
   const queuedWorkflow = calls.find(([name]) => name === "queue")[1].workflow;
   assert.equal(queuedWorkflow["1"].inputs.image, "input.png");
 });
+
+
+test("requests upstream cancellation for the acknowledged prompt when caller aborts", async () => {
+  const controller = new AbortController();
+  let markHistoryStarted;
+  const historyStarted = new Promise((resolve) => { markHistoryStarted = resolve; });
+  const cancelled = [];
+  const { adapter, request } = setup({ transport: {
+    async getHistory() { markHistoryStarted(); return new Promise(() => {}); },
+    async cancelPrompt(promptId) { cancelled.push(promptId); return { requested: true, prompt_id: promptId }; }
+  }});
+  const pending = adapter.render({ ...request, signal: controller.signal });
+  await historyStarted;
+  controller.abort();
+  await assert.rejects(pending, { code: "CANCELLED" });
+  assert.deepEqual(cancelled, ["prompt-123"]);
+});

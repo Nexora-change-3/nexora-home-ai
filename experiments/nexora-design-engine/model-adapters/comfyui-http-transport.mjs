@@ -111,6 +111,23 @@ export function createComfyUiHttpTransport({
       return { prompt_id: result.prompt_id };
     },
 
+    async cancelPrompt(promptId, { signal } = {}) {
+      assert(typeof promptId === "string" && /^[a-zA-Z0-9_-]+$/.test(promptId), "INVALID_PROMPT_ID", "The ComfyUI prompt ID is invalid.");
+      const post = async (path, body) => {
+        const response = await request(path, {
+          method: "POST", signal,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        }, "CANCEL_FAILED", "ComfyUI could not cancel the render job.");
+        if (!response.ok) throw fail("CANCEL_FAILED", "ComfyUI could not cancel the render job.");
+      };
+      await Promise.all([
+        post("/queue", { delete: [promptId] }),
+        post("/interrupt", { prompt_id: promptId })
+      ]);
+      return { requested: true, prompt_id: promptId };
+    },
+
     async getHistory(promptId, { signal } = {}) {
       assert(typeof promptId === "string" && /^[a-zA-Z0-9_-]+$/.test(promptId), "INVALID_PROMPT_ID", "The ComfyUI prompt ID is invalid.");
       const response = await request(`/history/${encodeURIComponent(promptId)}`, { method: "GET", signal }, "HISTORY_FAILED", "Could not read ComfyUI render status.");

@@ -94,3 +94,19 @@ test("rejects non-PNG output even when the endpoint responds successfully", asyn
   const transport = createComfyUiHttpTransport({ ...base, fetchImpl: async () => response(new Uint8Array([1, 2, 3]).buffer, 200, { "content-type": "image/jpeg" }) });
   await assert.rejects(() => transport.getOutput({ filename: "wrong.jpg" }), { code: "INVALID_OUTPUT_MIME" });
 });
+
+
+test("cancels only the specified queued or running prompt", async () => {
+  const calls = [];
+  const transport = createComfyUiHttpTransport({ ...base, fetchImpl: async (url, init) => {
+    calls.push({ url, init });
+    return responses(null, 200);
+  }});
+  const result = await transport.cancelPrompt("job_123");
+  assert.deepEqual(result, { requested: true, prompt_id: "job_123" });
+  assert.deepEqual(calls.map(({ url }) => new URL(url).pathname), ["/queue", "/interrupt"]);
+  assert.deepEqual(JSON.parse(calls[0].init.body), { delete: ["job_123"] });
+  assert.deepEqual(JSON.parse(calls[1].init.body), { prompt_id: "job_123" });
+  assert.ok(calls.every(({ init }) => init.headers.Authorization === "Bearer test-token"));
+  await assert.rejects(() => transport.cancelPrompt("../other"), { code: "INVALID_PROMPT_ID" });
+});
