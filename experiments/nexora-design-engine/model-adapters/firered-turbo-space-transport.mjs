@@ -54,6 +54,21 @@ function validateImageBytes(bytes, mimeType, maxBytes) {
   throw fail("UNSUPPORTED_OUTPUT_TYPE", "FireRed returned an unsupported image type.");
 }
 
+async function fetchPinned(fetchImpl, url, init, origin) {
+  let response = await fetchImpl(url, { ...init, redirect: "manual" });
+  if (response.status >= 300 && response.status < 400) {
+    const location = response.headers.get("location");
+    assert(location, "UNSAFE_REDIRECT", "FireRed returned a redirect without a location.");
+    const next = new URL(location, url);
+    assert(next.protocol === "https:" && next.origin === origin, "REDIRECT_ORIGIN_REJECTED", "FireRed attempted to redirect outside the pinned Space origin.");
+    const method = String(init.method || "GET").toUpperCase();
+    if (method === "POST") assert([307, 308].includes(response.status), "UNSAFE_POST_REDIRECT", "FireRed returned an unsafe redirect for a queue submission.");
+    response = await fetchImpl(next.toString(), { ...init, redirect: "manual" });
+    assert(!(response.status >= 300 && response.status < 400), "REDIRECT_LOOP_BLOCKED", "FireRed returned a second redirect.");
+  }
+  return response;
+}
+
 async function readCompletion(response, { debugUpstreamErrors = false } = {}) {
   const reader = response.body?.getReader?.();
   assert(reader, "INVALID_SSE_RESPONSE", "FireRed returned no readable event stream.");
@@ -112,10 +127,10 @@ export function createFireRedTurboSpaceTransport({ baseUrl = DEFAULT_SPACE_ORIGI
     const payload = { data: [JSON.stringify([toDataUrl(bytes, mimeType)]), prompt, seed, randomizeSeed, steps, mode, gpuDuration] };
     let response;
     try {
-      response = await fetchImpl(origin + "/gradio_api/call/infer", {
+      response = await fetchPinned(fetchImpl, origin + "/gradio_api/call/infer", {
         method: "POST", headers: { "content-type": "application/json", accept: "application/json", "x-gradio-user": "api" },
-        body: JSON.stringify(payload), signal, redirect: "error"
-      });
+        body: JSON.stringify(payload), signal
+      }, origin);
     } catch (cause) {
       const error = fail("QUEUE_OUTCOME_UNKNOWN", "FireRed queue submission could not be confirmed; do not resubmit this request.");
       error.debug_detail = String(cause?.name || "network_error").slice(0, 80); throw error;
@@ -135,9 +150,9 @@ export function createFireRedTurboSpaceTransport({ baseUrl = DEFAULT_SPACE_ORIGI
     const handle = resolveHandle(eventHandle);
     let response;
     try {
-      response = await fetchImpl(origin + "/gradio_api/call/infer/" + encodeURIComponent(handle.event_id), {
-        headers: { accept: "text/event-stream" }, signal, redirect: "error"
-      });
+      response = await fetchPinned(fetchImpl, origin + "/gradio_api/call/infer/" + encodeURIComponent(handle.event_id), {
+        headers: { accept: "text/event-stream" }, signal
+      }, origin);
     } catch { throw fail("RESULT_FETCH_FAILED", "FireRed completion stream could not be reached."); }
     assert(response.ok, "RESULT_FETCH_FAILED", "FireRed completion stream returned an error.");
     const output = await readCompletion(response, { debugUpstreamErrors });
@@ -146,7 +161,7 @@ export function createFireRedTurboSpaceTransport({ baseUrl = DEFAULT_SPACE_ORIGI
     const seed = Number.isInteger(output[1]) ? output[1] : null;
     const imageUrl = resolveImageUrl(imageData, origin);
     let imageResponse;
-    try { imageResponse = await fetchImpl(imageUrl, { headers: { accept: "image/png,image/jpeg,image/webp" }, signal, redirect: "error" }); }
+    try { imageResponse = await fetchPinned(fetchImpl, imageUrl, { headers: { accept: "image/png,image/jpeg,image/webp" }, signal }, origin); }
     catch { throw fail("OUTPUT_FETCH_FAILED", "FireRed output image could not be downloaded."); }
     assert(imageResponse.ok, "OUTPUT_FETCH_FAILED", "FireRed output image returned an error.");
     const mimeType = (imageResponse.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();

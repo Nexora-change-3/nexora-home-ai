@@ -12,7 +12,7 @@ test("submits a data URL through the documented Gradio named endpoint", async ()
   assert.deepEqual(result,{event_id:EVENT});
   assert.equal(calls.length,1);
   assert.equal(calls[0].url,DEFAULT_SPACE_ORIGIN+"/gradio_api/call/infer");
-  assert.equal(calls[0].init.redirect,"error");
+  assert.equal(calls[0].init.redirect,"manual");
   const payload=JSON.parse(calls[0].init.body);
   assert.deepEqual(JSON.parse(payload.data[0]),["data:image/jpeg;base64,QUJD"]);
   assert.equal(payload.data[1],"A clear interior design prompt");
@@ -27,7 +27,7 @@ test("reads the named-endpoint completion event and validates the same-origin PN
   const result=await transport.getResult({event_id:EVENT});
   assert.equal(result.mimeType,"image/png"); assert.deepEqual([...result.bytes],[...PNG]); assert.equal(result.seed,42);
   assert.equal(calls[0].url,DEFAULT_SPACE_ORIGIN+"/gradio_api/call/infer/"+EVENT);
-  assert.equal(calls[0].init.redirect,"error"); assert.equal(calls[1].init.redirect,"error");
+  assert.equal(calls[0].init.redirect,"manual"); assert.equal(calls[1].init.redirect,"error");
 });
 
 test("rejects a foreign output URL before fetching it",async()=>{
@@ -51,4 +51,21 @@ test("reports upstream inference failures without leaking details by default",as
 test("rejects invalid image bytes even when upstream MIME says PNG",async()=>{
   const transport=createFireRedTurboSpaceTransport({fetchImpl:async(url)=>url.endsWith("/"+EVENT)?new Response(completionSse([{url:DEFAULT_SPACE_ORIGIN+"/gradio_api/file=bad.png"},42]),{status:200,headers:{"content-type":"text/event-stream"}}):new Response(new Uint8Array([1,2,3]),{status:200,headers:{"content-type":"image/png"}})});
   await assert.rejects(transport.getResult({event_id:EVENT}),(e)=>e.code==="INVALID_OUTPUT_IMAGE");
+});
+
+
+test("follows only a same-origin 307 redirect for queue submission", async () => {
+  const calls=[];
+  const transport=createFireRedTurboSpaceTransport({fetchImpl:async(url,init)=>{calls.push({url,init});if(calls.length===1)return new Response(null,{status:307,headers:{location:"/gradio_api/call/infer/"}});return new Response(JSON.stringify({event_id:EVENT}),{status:200,headers:{"content-type":"application/json"}});}});
+  const result=await transport.submit({imageBytes:new Uint8Array([1,2,3]),prompt:"A prompt"});
+  assert.deepEqual(result,{event_id:EVENT}); assert.equal(calls.length,2);
+  assert.equal(calls[1].url,DEFAULT_SPACE_ORIGIN+"/gradio_api/call/infer/");
+  assert.equal(calls[0].init.redirect,"manual"); assert.equal(calls[1].init.redirect,"manual");
+});
+
+test("blocks redirects to a different origin before following them", async () => {
+  const calls=[];
+  const transport=createFireRedTurboSpaceTransport({fetchImpl:async(url,init)=>{calls.push({url,init});return new Response(null,{status:307,headers:{location:"https://evil.example/collect"}});}});
+  await assert.rejects(transport.submit({imageBytes:new Uint8Array([1,2,3]),prompt:"A prompt"}),(e)=>e.code==="REDIRECT_ORIGIN_REJECTED");
+  assert.equal(calls.length,1);
 });

@@ -75,7 +75,7 @@ function parseEventHandle(serialized) {
   let handle;
   try { handle = JSON.parse(serialized); }
   catch { throw fail("DISPATCH_NOT_RECOVERABLE", "Saved FireRed event handle is malformed."); }
-  assert(handle && typeof handle.event_id === "string",
+  assert(handle && typeof handle.event_id === "string" && typeof handle.session_hash === "string",
     "DISPATCH_NOT_RECOVERABLE", "Saved FireRed event handle is incomplete.");
   return handle;
 }
@@ -194,14 +194,17 @@ export function createFireRedTurboSpaceAdapter({
         gpuDuration: 120,
         signal: deadline.signal
       });
-      assert(submission && typeof submission.event_id === "string",
+      assert(submission && typeof submission.event_id === "string" && typeof submission.session_hash === "string",
         "QUEUE_OUTCOME_UNKNOWN", "FireRed returned no valid event handle.");
       await dispatchStore.markQueued(requestId, JSON.stringify(submission));
-    } catch {
+    } catch (cause) {
       await dispatchStore.markUnknown(requestId).catch(() => {});
       deadline.close();
-      throw fail("QUEUE_OUTCOME_UNKNOWN",
+      const error = fail("QUEUE_OUTCOME_UNKNOWN",
         "FireRed queue submission was not confirmed. The request is blocked from resubmission to prevent duplicate generation.");
+      error.diagnostic_code = String(cause?.code || cause?.name || "UPSTREAM_UNKNOWN").slice(0, 80);
+      if (cause?.debug_detail) error.diagnostic_detail = String(cause.debug_detail).slice(0, 160);
+      throw error;
     }
 
     try {

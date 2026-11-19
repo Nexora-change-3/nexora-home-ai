@@ -307,10 +307,12 @@ export default {
       const status = Number.isInteger(error.status) ? error.status : 500;
       const code = error.code || "INTERNAL_ERROR";
       if (status >= 500) console.error("NEXORA_ENGINE_ERROR", code);
-      return json({
+      const payload = {
         error: code,
         message: status >= 500 ? "Сервис не смог завершить операцию. Исходная фотография не изменена." : error.message
-      }, status);
+      };
+      if (error.diagnostic_code) payload.diagnostic = { code: error.diagnostic_code, detail: error.diagnostic_detail || null };
+      return json(payload, status);
     }
   }
 };
