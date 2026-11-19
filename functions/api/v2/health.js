@@ -10,7 +10,8 @@ function allowedOrigin(origin) {
 
 export async function onRequest({ request, env }) {
   if (request.method !== "GET") return Response.json({ error: "Разрешён только GET-запрос." }, { status: 405 });
-  if (!allowedOrigin(request.headers.get("Origin"))) return Response.json({ error: "Источник запроса не разрешён." }, { status: 403 });
+  const origin = request.headers.get("Origin");
+  if (origin && !allowedOrigin(origin)) return Response.json({ error: "Источник запроса не разрешён." }, { status: 403 });
   if (!env.NEXORA_AI) return Response.json({ error: "Не подключён V2 AI service binding." }, { status: 503 });
   return env.NEXORA_AI.fetch(request);
 }
