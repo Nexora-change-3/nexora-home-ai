@@ -35,7 +35,7 @@ test("composes the guarded renderer with the allowlisted HTTP transport end to e
     if (url.endsWith("/history/render_42")) {
       return new Response(JSON.stringify({ render_42: { status: { completed: true }, outputs: { "30": { images: [{ filename: "result.png", subfolder: "", type: "output" }] } } } }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
-    if (url.includes("/view?")) return new Response(new Uint8Array([7, 8, 9]), { status: 200, headers: { "Content-Type": "image/png", "Content-Length": "3" } });
+    if (url.includes("/view?")) return new Response(new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]), { status: 200, headers: { "Content-Type": "image/png", "Content-Length": "3" } });
     throw new Error("Unexpected route");
   };
 
@@ -69,7 +69,7 @@ test("composes the guarded renderer with the allowlisted HTTP transport end to e
   const result = await adapter.render({
     request_id: "nexora-test-42",
     source_image_ref: "nexora://source/original-kitchen",
-    source_image: { bytes: new Uint8Array([1, 2, 3, 4]), mime_type: "image/png" },
+    source_image: { bytes: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]), mime_type: "image/png" },
     design_brief: { render_instructions: "Create a materially different interior design." },
     safety_policy: { preserve_source: true }
   });
@@ -77,7 +77,7 @@ test("composes the guarded renderer with the allowlisted HTTP transport end to e
   assert.equal(result.status, "succeeded");
   assert.equal(result.image_ref, "nexora://results/immutable-42");
   assert.equal(result.prompt_id, "render_42");
-  assert.deepEqual([...stored.bytes], [7, 8, 9]);
+  assert.deepEqual([...stored.bytes], [137, 80, 78, 71, 13, 10, 26, 10]);
   assert.equal(stored.metadata.source_image_ref, "nexora://source/original-kitchen");
   assert.equal(calls.length, 4);
   assert.ok(calls.every(({ url }) => url.startsWith("https://comfy.private.example/")));
