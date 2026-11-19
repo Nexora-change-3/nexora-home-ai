@@ -1,5 +1,6 @@
 const DEFAULT_SPACE_ORIGIN = "https://someone-in-the-world-firered-experimental-turbo.hf.space";
 const DEFAULT_MAX_OUTPUT_BYTES = 20 * 1024 * 1024;
+const DEFAULT_INFER_FN_INDEX = 3;
 const PNG_SIGNATURE = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
 
 function fail(code, message) {
@@ -22,26 +23,17 @@ function toBase64(input) {
   return btoa(binary);
 }
 
-function parseSseCompletion(body, { debugUpstreamErrors = false } = {}) {
-  const blocks = String(body).split(/\r?\n\r?\n/);
-  for (const block of blocks) {
-    const event = block.match(/^event:\s*(.+)$/m)?.[1]?.trim();
-    const data = block.split(/\r?\n/)
-      .filter((line) => line.startsWith("data:"))
-      .map((line) => line.slice(5).trimStart())
-      .join("\n");
-    if (!data) continue;
-    if (event === "error") {
-      const error = fail("UPSTREAM_RENDER_FAILED", "FireRed Space reported an inference error.");
-      if (debugUpstreamErrors) error.debug_detail = data.slice(0, 500).replace(/[\r\n]/g, " ");
-      throw error;
-    }
-    if (event === "complete") {
-      try { return JSON.parse(data); }
-      catch { throw fail("INVALID_UPSTREAM_RESPONSE", "FireRed Space returned invalid completion data."); }
-    }
+function resolveHandle(input) {
+  if (typeof input === "string") {
+    try {
+      const parsed = JSON.parse(input);
+      if (parsed && typeof parsed.event_id === "string" && typeof parsed.session_hash === "string") return parsed;
+    } catch {}
+    throw fail("INVALID_EVENT_HANDLE", "Saved FireRed event handle is invalid.");
   }
-  throw fail("INCOMPLETE_UPSTREAM_RESPONSE", "FireRed Space closed the event stream without a completion event.");
+  assert(input && typeof input.event_id === "string" && typeof input.session_hash === "string",
+    "INVALID_EVENT_HANDLE", "A FireRed event_id and session_hash are required.");
+  return input;
 }
 
 function resolveImageUrl(imageData, origin) {
@@ -58,7 +50,6 @@ function resolveImageUrl(imageData, origin) {
       "FireRed output must be served by the pinned Space origin.");
     return url.toString();
   }
-
   const path = imageData && typeof imageData.path === "string" ? imageData.path : null;
   assert(path && path.length <= 2048, "OUTPUT_NOT_FOUND", "FireRed Space returned no accessible output image.");
   return new URL("/gradio_api/file=" + encodeURIComponent(path), origin).toString();
@@ -88,9 +79,55 @@ function validateImageBytes(bytes, mimeType, maxBytes) {
   throw fail("UNSUPPORTED_OUTPUT_TYPE", "FireRed returned an unsupported image type.");
 }
 
+async function readQueueCompletion(response, eventId, { signal, debugUpstreamErrors = false } = {}) {
+  const reader = response.body?.getReader?.();
+  assert(reader, "INVALID_SSE_RESPONSE", "FireRed queue returned no readable event stream.");
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
+      while (true) {
+        const boundary = buffer.indexOf("\n\n");
+        if (boundary < 0) break;
+        const block = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        const dataLine = block.split("\n").find((line) => line.startsWith("data:"));
+        if (!dataLine) continue;
+        let message;
+        try { message = JSON.parse(dataLine.slice(5).trimStart()); }
+        catch { throw fail("INVALID_SSE_MESSAGE", "FireRed queue returned malformed event data."); }
+        if (message.event_id !== eventId) continue;
+        if (message.msg === "process_completed") {
+          if (message.success === false) {
+            const error = fail("UPSTREAM_RENDER_FAILED", "FireRed Space reported an inference error.");
+            if (debugUpstreamErrors) {
+              const detail = message.output?.error || message.output?.message || message.output;
+              error.debug_detail = String(typeof detail === "string" ? detail : JSON.stringify(detail)).slice(0, 500);
+            }
+            throw error;
+          }
+          return message.output;
+        }
+        if (message.msg === "queue_full" || message.msg === "unexpected_error") {
+          const error = fail("UPSTREAM_RENDER_FAILED", "FireRed Space could not process the queued request.");
+          if (debugUpstreamErrors) error.debug_detail = String(message.message || message.msg).slice(0, 500);
+          throw error;
+        }
+      }
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
+  throw fail("INCOMPLETE_UPSTREAM_RESPONSE", "FireRed queue stream ended before this event completed.");
+}
+
 export function createFireRedTurboSpaceTransport({
   baseUrl = DEFAULT_SPACE_ORIGIN,
   fetchImpl = globalThis.fetch,
+  cryptoImpl = globalThis.crypto,
   maxOutputBytes = DEFAULT_MAX_OUTPUT_BYTES,
   debugUpstreamErrors = false
 } = {}) {
@@ -100,6 +137,7 @@ export function createFireRedTurboSpaceTransport({
     !parsed.username && !parsed.password && parsed.pathname === "/" && !parsed.search && !parsed.hash,
   "SPACE_ORIGIN_NOT_ALLOWED", "Only the pinned FireRed Turbo Hugging Face Space origin is allowed.");
   assert(Number.isInteger(maxOutputBytes) && maxOutputBytes > 0, "INVALID_LIMIT", "maxOutputBytes must be a positive integer.");
+  assert(typeof cryptoImpl?.randomUUID === "function", "CRYPTO_UNAVAILABLE", "Secure session IDs are required.");
   const origin = parsed.origin;
 
   async function submit({ imageBytes, prompt, seed = 42, randomizeSeed = false, steps = 3, mode = "fast", gpuDuration = 120, signal } = {}) {
@@ -111,14 +149,21 @@ export function createFireRedTurboSpaceTransport({
     assert(steps === 3 && mode === "fast" && gpuDuration === 120,
       "UNSUPPORTED_RENDER_CONFIG", "This pinned Turbo Space adapter supports only fast mode, 3 steps and 120 seconds GPU duration.");
 
+    const sessionHash = cryptoImpl.randomUUID();
     const payload = {
-      data: [JSON.stringify([toBase64(bytes)]), prompt, seed, randomizeSeed, steps, mode, gpuDuration]
+      data: [JSON.stringify([toBase64(bytes)]), prompt, seed, randomizeSeed, steps, mode, gpuDuration],
+      fn_index: DEFAULT_INFER_FN_INDEX,
+      session_hash: sessionHash
     };
     let response;
     try {
-      response = await fetchImpl(origin + "/gradio_api/call/infer", {
+      response = await fetchImpl(origin + "/gradio_api/queue/join", {
         method: "POST",
-        headers: { "content-type": "application/json", accept: "application/json" },
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json",
+          "x-gradio-user": "api"
+        },
         body: JSON.stringify(payload),
         signal,
         redirect: "error"
@@ -132,25 +177,28 @@ export function createFireRedTurboSpaceTransport({
     catch { throw fail("QUEUE_OUTCOME_UNKNOWN", "FireRed Space returned an invalid queue response."); }
     assert(result && typeof result.event_id === "string" && /^[a-zA-Z0-9_-]{8,128}$/.test(result.event_id),
       "QUEUE_OUTCOME_UNKNOWN", "FireRed Space returned no valid event identifier.");
-    return { event_id: result.event_id };
+    return { event_id: result.event_id, session_hash: sessionHash };
   }
 
-  async function getResult(eventId, { signal } = {}) {
-    assert(typeof eventId === "string" && /^[a-zA-Z0-9_-]{8,128}$/.test(eventId),
-      "INVALID_EVENT_ID", "A valid FireRed event identifier is required.");
+  async function getResult(eventHandle, { signal } = {}) {
+    const handle = resolveHandle(eventHandle);
+    assert(/^[a-zA-Z0-9_-]{8,128}$/.test(handle.event_id), "INVALID_EVENT_ID", "FireRed event identifier is invalid.");
+    assert(/^[a-zA-Z0-9_-]{8,128}$/.test(handle.session_hash), "INVALID_SESSION_HASH", "FireRed session hash is invalid.");
     let response;
     try {
-      response = await fetchImpl(origin + "/gradio_api/call/infer/" + encodeURIComponent(eventId), {
+      const url = new URL("/gradio_api/queue/data", origin);
+      url.searchParams.set("session_hash", handle.session_hash);
+      response = await fetchImpl(url.toString(), {
         headers: { accept: "text/event-stream" },
         signal,
         redirect: "error"
       });
     } catch {
-      throw fail("RESULT_FETCH_FAILED", "FireRed result stream could not be reached.");
+      throw fail("RESULT_FETCH_FAILED", "FireRed queue stream could not be reached.");
     }
-    assert(response.ok, "RESULT_FETCH_FAILED", "FireRed result stream returned an error.");
-    const completion = parseSseCompletion(await response.text(), { debugUpstreamErrors });
-    const data = Array.isArray(completion) ? completion : completion?.data;
+    assert(response.ok, "RESULT_FETCH_FAILED", "FireRed queue stream returned an error.");
+    const output = await readQueueCompletion(response, handle.event_id, { signal, debugUpstreamErrors });
+    const data = output?.data;
     assert(Array.isArray(data) && data.length >= 1, "INVALID_UPSTREAM_RESPONSE", "FireRed completion did not include result data.");
     const imageData = data[0];
     const seed = Number.isInteger(data[1]) ? data[1] : null;
@@ -176,4 +224,4 @@ export function createFireRedTurboSpaceTransport({
   return Object.freeze({ submit, getResult, origin });
 }
 
-export { DEFAULT_SPACE_ORIGIN };
+export { DEFAULT_SPACE_ORIGIN, DEFAULT_INFER_FN_INDEX };
