@@ -67,7 +67,7 @@ test("rejects a queue acknowledgement without prompt_id", async () => {
   await assert.rejects(adapter.render(request), { code: "QUEUE_FAILED" });
 });
 
-test("does not accept an arbitrary workflow URL or workflow supplied by request", async () => {
+test("ignores caller-supplied workflow URLs and uses only the pinned workflow", async () => {
   const { adapter, request } = setup();
   const result = await adapter.render({ ...request, workflow_url: "https://attacker.invalid/workflow.json" });
   assert.equal(result.status, "succeeded");
@@ -100,4 +100,38 @@ test("honours cancellation before submitting a queued render", async () => {
   const { adapter, request, calls } = setup();
   await assert.rejects(adapter.render({ ...request, signal: controller.signal }), { code: "CANCELLED" });
   assert.equal(calls.length, 0);
+});
+
+test("enforces a timeout while an individual transport operation is hanging", async () => {
+  let receivedSignal;
+  const { adapter, request } = setup({
+    transport: {
+      uploadImage({ signal }) {
+        receivedSignal = signal;
+        return new Promise(() => {});
+      }
+    },
+    options: { timeoutMs: 15 }
+  });
+  await assert.rejects(adapter.render(request), { code: "RENDER_TIMEOUT" });
+  assert.equal(receivedSignal.aborted, true);
+});
+
+test("propagates cancellation to an in-flight transport operation", async () => {
+  const controller = new AbortController();
+  let receivedSignal;
+  const { adapter, request } = setup({
+    transport: {
+      uploadImage({ signal }) {
+        receivedSignal = signal;
+        return new Promise(() => {});
+      }
+    },
+    options: { timeoutMs: 1000 }
+  });
+  const pending = adapter.render({ ...request, signal: controller.signal });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  controller.abort();
+  await assert.rejects(pending, { code: "CANCELLED" });
+  assert.equal(receivedSignal.aborted, true);
 });

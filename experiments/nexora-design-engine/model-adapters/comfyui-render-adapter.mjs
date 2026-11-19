@@ -53,8 +53,31 @@ function findOutputImage(historyEntry, outputNodeId) {
   };
 }
 
-function isAbortError(signal) {
-  return Boolean(signal?.aborted);
+function createOperationContext({ timeoutMs, signal, now }) {
+  const controller = new AbortController();
+  let rejectAbort;
+  const aborted = new Promise((_, reject) => { rejectAbort = reject; });
+  const abort = (error) => {
+    if (!controller.signal.aborted) controller.abort(error);
+    rejectAbort(error);
+  };
+  const timer = setTimeout(() => abort(fail("RENDER_TIMEOUT", "ComfyUI render exceeded the configured timeout.")), timeoutMs);
+  const onAbort = () => abort(fail("CANCELLED", "Render was cancelled."));
+  if (signal?.aborted) onAbort();
+  else signal?.addEventListener("abort", onAbort, { once: true });
+
+  return {
+    signal: controller.signal,
+    deadline: now() + timeoutMs,
+    async run(operation) {
+      if (controller.signal.aborted) throw controller.signal.reason || fail("CANCELLED", "Render was cancelled.");
+      return Promise.race([Promise.resolve().then(() => operation(controller.signal)), aborted]);
+    },
+    close() {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+    }
+  };
 }
 
 export function createComfyUiRenderAdapter({
@@ -70,10 +93,11 @@ export function createComfyUiRenderAdapter({
   pollIntervalMs = 1000,
   now = () => Date.now(),
   sleep = (ms, signal) => new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(signal.reason || fail("CANCELLED", "Render was cancelled."));
     const timer = setTimeout(resolve, ms);
     signal?.addEventListener("abort", () => {
       clearTimeout(timer);
-      reject(fail("CANCELLED", "Render was cancelled."));
+      reject(signal.reason || fail("CANCELLED", "Render was cancelled."));
     }, { once: true });
   })
 } = {}) {
@@ -109,74 +133,83 @@ export function createComfyUiRenderAdapter({
 
   async function runRender(request) {
     const startedAt = now();
-    const deadline = startedAt + timeoutMs;
-    const signal = request.signal;
+    const context = createOperationContext({ timeoutMs, signal: request.signal, now });
     const { bytes, mimeType } = validateRequest(request, maxImageBytes);
     const checkActive = () => {
-      if (isAbortError(signal)) throw fail("CANCELLED", "Render was cancelled.");
-      if (now() >= deadline) throw fail("RENDER_TIMEOUT", "ComfyUI render exceeded the configured timeout.");
+      if (context.signal.aborted) throw context.signal.reason || fail("CANCELLED", "Render was cancelled.");
+      if (now() >= context.deadline) throw fail("RENDER_TIMEOUT", "ComfyUI render exceeded the configured timeout.");
     };
 
-    checkActive();
-    const uploaded = await transport.uploadImage({
-      bytes: new Uint8Array(bytes),
-      mimeType,
-      filename: `nexora-source-${request.request_id}`
-    });
-    assert(uploaded && typeof uploaded.name === "string" && uploaded.name, "UPLOAD_FAILED", "ComfyUI did not return a server-side image name.");
-
-    const apiWorkflow = clone(workflow);
-    applyNodeInput(apiWorkflow, nodeInputs.image, uploaded.name);
-    applyNodeInput(apiWorkflow, nodeInputs.prompt, request.design_brief.render_instructions || request.design_brief.prompt);
-    if (nodeInputs.seed) applyNodeInput(apiWorkflow, nodeInputs.seed, request.seed, false);
-    checkActive();
-
-    const queued = await transport.queuePrompt({ workflow: apiWorkflow, clientId: request.request_id });
-    assert(queued && typeof queued.prompt_id === "string" && queued.prompt_id, "QUEUE_FAILED", "ComfyUI did not acknowledge the render job.");
-    let historyEntry;
-
-    while (true) {
+    try {
       checkActive();
-      const history = await transport.getHistory(queued.prompt_id);
-      historyEntry = history?.[queued.prompt_id];
-      if (historyEntry?.status?.completed === true) break;
-      const statusText = historyEntry?.status?.status_str;
-      const hasExecutionError = (historyEntry?.status?.messages || []).some(([kind]) => kind === "execution_error");
-      if (statusText === "error" || hasExecutionError) throw fail("UPSTREAM_RENDER_FAILED", "ComfyUI reported an execution error.");
-      await sleep(Math.min(pollIntervalMs, Math.max(0, deadline - now())), signal);
-    }
+      const uploaded = await context.run((signal) => transport.uploadImage({
+        bytes: new Uint8Array(bytes),
+        mimeType,
+        filename: `nexora-source-${request.request_id}`,
+        signal
+      }));
+      assert(uploaded && typeof uploaded.name === "string" && uploaded.name, "UPLOAD_FAILED", "ComfyUI did not return a server-side image name.");
 
-    const output = findOutputImage(historyEntry, outputNodeId);
-    checkActive();
-    const rendered = await transport.getOutput(output);
-    const outputBytes = rendered instanceof Uint8Array ? rendered : new Uint8Array(rendered);
-    assert(outputBytes.byteLength > 0, "EMPTY_OUTPUT", "ComfyUI returned an empty output image.");
-    const stored = await transport.storeResult({
-      requestId: request.request_id,
-      bytes: outputBytes,
-      mimeType: "image/png",
-      metadata: {
-        source_image_ref: request.source_image_ref,
-        provider: "comfyui",
+      const apiWorkflow = clone(workflow);
+      applyNodeInput(apiWorkflow, nodeInputs.image, uploaded.name);
+      applyNodeInput(apiWorkflow, nodeInputs.prompt, request.design_brief.render_instructions || request.design_brief.prompt);
+      if (nodeInputs.seed) applyNodeInput(apiWorkflow, nodeInputs.seed, request.seed, false);
+      checkActive();
+
+      const queued = await context.run((signal) => transport.queuePrompt({
+        workflow: apiWorkflow,
+        clientId: request.request_id,
+        signal
+      }));
+      assert(queued && typeof queued.prompt_id === "string" && queued.prompt_id, "QUEUE_FAILED", "ComfyUI did not acknowledge the render job.");
+      let historyEntry;
+
+      while (true) {
+        checkActive();
+        const history = await context.run((signal) => transport.getHistory(queued.prompt_id, { signal }));
+        historyEntry = history?.[queued.prompt_id];
+        if (historyEntry?.status?.completed === true) break;
+        const statusText = historyEntry?.status?.status_str;
+        const hasExecutionError = (historyEntry?.status?.messages || []).some(([kind]) => kind === "execution_error");
+        if (statusText === "error" || hasExecutionError) throw fail("UPSTREAM_RENDER_FAILED", "ComfyUI reported an execution error.");
+        await context.run((signal) => sleep(Math.min(pollIntervalMs, Math.max(0, context.deadline - now())), signal));
+      }
+
+      const output = findOutputImage(historyEntry, outputNodeId);
+      checkActive();
+      const rendered = await context.run((signal) => transport.getOutput(output, { signal }));
+      const outputBytes = rendered instanceof Uint8Array ? rendered : new Uint8Array(rendered);
+      assert(outputBytes.byteLength > 0, "EMPTY_OUTPUT", "ComfyUI returned an empty output image.");
+      const stored = await context.run((signal) => transport.storeResult({
+        requestId: request.request_id,
+        bytes: outputBytes,
+        mimeType: "image/png",
+        metadata: {
+          source_image_ref: request.source_image_ref,
+          provider: "comfyui",
+          model_id: modelId,
+          model_revision: modelRevision || null,
+          workflow_hash: workflowHash,
+          prompt_id: queued.prompt_id,
+          output
+        },
+        signal
+      }));
+      assert(stored && typeof stored.image_ref === "string" && stored.image_ref, "RESULT_STORAGE_FAILED", "NEXORA result storage did not return an immutable image reference.");
+
+      return {
+        request_id: request.request_id,
+        status: "succeeded",
+        image_ref: stored.image_ref,
         model_id: modelId,
         model_revision: modelRevision || null,
         workflow_hash: workflowHash,
         prompt_id: queued.prompt_id,
-        output
-      }
-    });
-    assert(stored && typeof stored.image_ref === "string" && stored.image_ref, "RESULT_STORAGE_FAILED", "NEXORA result storage did not return an immutable image reference.");
-
-    return {
-      request_id: request.request_id,
-      status: "succeeded",
-      image_ref: stored.image_ref,
-      model_id: modelId,
-      model_revision: modelRevision || null,
-      workflow_hash: workflowHash,
-      prompt_id: queued.prompt_id,
-      elapsed_ms: Math.max(0, now() - startedAt)
-    };
+        elapsed_ms: Math.max(0, now() - startedAt)
+      };
+    } finally {
+      context.close();
+    }
   }
 
   return Object.freeze({
