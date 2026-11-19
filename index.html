@@ -85,8 +85,7 @@ function getAISettings(){
 }
 function validateAIKeyHeader(key){
   if(typeof key!=='string'||!key.length)return 'Ключ доступа не сохранён. Откройте настройки AI и сохраните ключ заново.';
-  if(/[\r\n\0-\x1F\x7F]/.test(key))return 'В сохранённом ключе обнаружены невидимые управляющие символы. Скопируйте ключ заново без переносов строк и сохраните настройки.';
-  if(/[^\x20-\x7E]/.test(key))return 'В сохранённом ключе есть недопустимые символы. Допускаются обычные символы ASCII; проверьте, нет ли скрытых переносов или специальных пробелов.';
+  for(let i=0;i<key.length;i++){const code=key.charCodeAt(i);if(code<0x20||code>0x7E)return 'В сохранённом ключе есть недопустимые символы. Допускаются обычные символы ASCII; проверьте, нет ли скрытых переносов или специальных пробелов.';}
   return '';
 }
 function cloneRequestForm(source){
