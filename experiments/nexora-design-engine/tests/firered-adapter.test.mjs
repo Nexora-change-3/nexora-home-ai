@@ -80,3 +80,22 @@ test("blocks adapter creation before image upload when live runtime lacks a requ
   assert.equal(calls.includes("upload"), false);
   assert.equal(calls.includes("queue"), false);
 });
+
+test("blocks adapter creation before upload when live graph validation fails", async () => {
+  const calls = [];
+  const transport = {
+    ...runtimeMethods(calls),
+    async uploadImage() { calls.push("upload"); throw new Error("must not upload"); },
+    async queuePrompt() { calls.push("queue"); throw new Error("must not queue"); },
+    async getHistory() {}, async getOutput() {}, async storeResult() {}
+  };
+  const changedWorkflow = structuredClone(workflow);
+  changedWorkflow["167:147"].inputs.image = ["missing-source", 0];
+  await assert.rejects(
+    () => createFireRed11ComfyAdapter({ transport, workflow: changedWorkflow, workflowHash }),
+    (error) => error.code === "FIRERED_RUNTIME_INCOMPATIBLE" &&
+      error.details.graph_validation.error_code === "BROKEN_COMFY_LINK"
+  );
+  assert.equal(calls.includes("upload"), false);
+  assert.equal(calls.includes("queue"), false);
+});
