@@ -125,12 +125,12 @@ $("generateBtn").addEventListener("click",async()=>{
  if(!roomFile||!analysisData||!analysisConfirmed){$("generateStatus").textContent="Сначала загрузите фото, завершите анализ и подтвердите помещение.";return}
  const button=$("generateBtn");button.disabled=true;$("results").innerHTML="";$("generateStatus").textContent="Подготавливаем фотографии и дизайн-бриф…";
  try{
-  const room=await resizeBlob(roomFile,511);const style=styles.find(x=>x.name===selectedStyle);const styleResponse=await fetch("../assets/styles/"+style.file);if(!styleResponse.ok)throw new Error("Не удалось загрузить визуальный референс стиля.");const style=await resizeBlob(await styleResponse.blob(),511);
+  const room=await resizeBlob(roomFile,511);const selectedStyleAsset=styles.find(x=>x.name===selectedStyle);const styleResponse=await fetch("../assets/styles/"+selectedStyleAsset.file);if(!styleResponse.ok)throw new Error("Не удалось загрузить визуальный референс стиля.");const styleRefBlob=await resizeBlob(await styleResponse.blob(),511);
   let userRef=null;if(userReference)userRef=await resizeBlob(userReference,511);
   const profile=await loadProfile();const width=Math.min(1024,Math.round(roomDimensions.width||1024));const height=Math.min(1024,Math.round(roomDimensions.height||768));
   for(let variant=1;variant<=3;variant++){
    $("generateStatus").textContent="Создаём и проверяем концепцию "+variant+" из 3…";
-   const form=new FormData();form.append("room_image",room,"room.jpg");form.append("style_reference",style,"style-reference.jpg");if(userRef)form.append("user_reference",userRef,"user-reference.jpg");
+   const form=new FormData();form.append("room_image",room,"room.jpg");form.append("style_reference",styleRefBlob,"style-reference.jpg");if(userRef)form.append("user_reference",userRef,"user-reference.jpg");
    form.append("room_type",$("roomType").value);form.append("style_name",selectedStyle);form.append("style_profile",JSON.stringify(profile));form.append("analysis",JSON.stringify(analysisData.analysis));form.append("confirmed_room_type",$("roomType").value);form.append("user_prompt",$("wishes").value.trim());form.append("variant_index",String(variant));form.append("output_width",String(width));form.append("output_height",String(height));
    const response=await fetch("/api/v2/generate",{method:"POST",body:form,cache:"no-store"});const data=await response.json();if(!response.ok)throw new Error(data.error||("Ошибка генерации "+response.status));showResult(data,variant);
   }
@@ -147,3 +147,4 @@ setRoom=function(file){nativeSetRoom(file);updateDimensions(file)};
 </script>
 </body>
 </html>
+
