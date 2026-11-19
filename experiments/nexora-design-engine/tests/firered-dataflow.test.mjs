@@ -6,13 +6,15 @@ import { createFireRed11ComfyAdapter, FIRERED_11_MODEL_ID, FIRERED_11_WORKFLOW_S
 import { createComfyUiHttpTransport } from "../model-adapters/comfyui-http-transport.mjs";
 
 function stableStringify(value) {
-  if (Array.isArray(value)) return \`[\${value.map(stableStringify).join(",")}]\`;
-  if (value && typeof value === "object") return \`{\${Object.keys(value).sort().map((key) => \`\${JSON.stringify(key)}:\${stableStringify(value[key])}\`).join(",")}}\`;
+  if (Array.isArray(value)) return "[" + value.map(stableStringify).join(",") + "]";
+  if (value && typeof value === "object") {
+    return "{" + Object.keys(value).sort().map((key) => JSON.stringify(key) + ":" + stableStringify(value[key])).join(",") + "}";
+  }
   return JSON.stringify(value);
 }
 
 const workflow = JSON.parse(await readFile(new URL("../workflows/firered-image-edit-1.1-api.json", import.meta.url), "utf8"));
-const workflowHash = \`sha256:\${createHash("sha256").update(stableStringify(workflow)).digest("hex")}\`;
+const workflowHash = "sha256:" + createHash("sha256").update(stableStringify(workflow)).digest("hex");
 const classes = [...new Set(Object.values(workflow).map((node) => node.class_type))];
 const objectInfo = Object.fromEntries(classes.map((classType) => {
   const nodes = Object.values(workflow).filter((node) => node.class_type === classType);
@@ -35,7 +37,7 @@ test("pins FireRed adapter to the reviewed workflow revision", async () => {
   );
 });
 
-test("runs the full FireRed dataflow through the real HTTP transport boundary with one immutable source upload", async () => {
+test("runs the full FireRed dataflow through the HTTP transport boundary with one immutable source upload", async () => {
   const calls = [];
   let stored;
   const originalBytes = new Uint8Array(png);
@@ -50,15 +52,9 @@ test("runs the full FireRed dataflow through the real HTTP transport boundary wi
   const fakeFetch = async (url, init = {}) => {
     const parsed = new URL(url);
     calls.push({ path: parsed.pathname, method: init.method || "GET" });
-    if (parsed.pathname === "/object_info") {
-      return Response.json(objectInfo);
-    }
-    if (parsed.pathname.startsWith("/models/")) {
-      return Response.json(inventory[parsed.pathname.split("/").pop()]);
-    }
-    if (parsed.pathname === "/system_stats") {
-      return Response.json({ system: { comfyui_version: "test-runtime" } });
-    }
+    if (parsed.pathname === "/object_info") return Response.json(objectInfo);
+    if (parsed.pathname.startsWith("/models/")) return Response.json(inventory[parsed.pathname.split("/").pop()]);
+    if (parsed.pathname === "/system_stats") return Response.json({ system: { comfyui_version: "test-runtime" } });
     if (parsed.pathname === "/upload/image") {
       const form = init.body;
       const uploadedBlob = form.get("image");
@@ -131,5 +127,4 @@ test("runs the full FireRed dataflow through the real HTTP transport boundary wi
   assert.equal(calls.filter((call) => call.path === "/upload/image").length, 1, "exactly one original image is uploaded");
   assert.equal(calls.filter((call) => call.path === "/prompt").length, 1, "the render is queued exactly once");
   assert.equal(workflow["143"].inputs.image, "nexora-source-placeholder.png", "the pinned graph template is not mutated");
-  assert.ok(calls.every((call) => call.method));
 });
