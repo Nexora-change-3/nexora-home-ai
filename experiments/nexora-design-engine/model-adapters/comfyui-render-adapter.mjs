@@ -185,6 +185,7 @@ export function createComfyUiRenderAdapter({
         signal
       }));
       assert(stored && typeof stored.image_ref === "string" && stored.image_ref, "RESULT_STORAGE_FAILED", "NEXORA result storage did not return an immutable image reference.");
+      assert(stored.image_ref !== request.source_image_ref, "SOURCE_OVERWRITE_BLOCKED", "A rendered result must be stored as a new image; the original source reference cannot be overwritten.");
       return {
         request_id: request.request_id, status: "succeeded", image_ref: stored.image_ref,
         model_id: modelId, model_revision: modelRevision || null, workflow_hash: workflowHash,

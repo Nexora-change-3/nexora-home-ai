@@ -146,3 +146,13 @@ test("requests upstream cancellation for the acknowledged prompt when caller abo
   await assert.rejects(pending, { code: "CANCELLED" });
   assert.deepEqual(cancelled, ["prompt-123"]);
 });
+
+
+test("refuses to overwrite the original source image reference", async () => {
+  const { adapter, request } = setup({
+    transport: {
+      async storeResult() { return { image_ref: request.source_image_ref }; }
+    }
+  });
+  await assert.rejects(adapter.render(request), { code: "SOURCE_OVERWRITE_BLOCKED" });
+});
