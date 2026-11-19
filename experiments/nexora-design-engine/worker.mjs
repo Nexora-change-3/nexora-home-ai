@@ -1,6 +1,6 @@
 import { createD1DispatchStore } from "./model-adapters/dispatch-ledger.mjs";
-import { createFireRedTurboSpaceAdapter } from "./model-adapters/firered-turbo-space-adapter.mjs";
-import { createFireRedTurboSpaceTransport } from "./model-adapters/firered-turbo-space-transport.mjs";
+import { createQwen2511FastAdapter } from "./model-adapters/qwen-2511-fast-adapter.mjs";
+import { createQwen2511FastTransport } from "./model-adapters/qwen-2511-fast-transport.mjs";
 import { createDesignConcepts } from "./src/design-brain/concept-planner.mjs";
 import { verifyRoomIdentity } from "./src/quality-gate/room-identity-gate.mjs";
 import { APP_HTML } from "./app-shell.mjs";
@@ -10,7 +10,7 @@ const MAX_RESULT_BYTES = 1_650_000;
 const MAX_DAILY_RENDERS = 6;
 const RESULT_TTL_HOURS = 24;
 const ROOM_TYPES = new Set(["kitchen", "living_room", "bedroom", "bathroom", "hallway", "office", "studio", "other"]);
-const MODEL = "FireRed 1.1 + Rapid-AIO V23 (public ZeroGPU Space)";
+const MODEL = "Qwen Image Edit 2511 + Rapid-AIO-V19 + Style-Transfer";
 
 function fail(code, message, status = 400) {
   const error = new Error(message);
@@ -137,12 +137,12 @@ function makeConcepts(input) {
 
 function makeAdapter(env, sourceImage) {
   const dispatchStore = createD1DispatchStore(env.DB);
-  const transport = createFireRedTurboSpaceTransport({ maxOutputBytes: MAX_RESULT_BYTES, debugUpstreamErrors: true });
-  return createFireRedTurboSpaceAdapter({
+  const transport = createQwen2511FastTransport({ maxOutputBytes: MAX_RESULT_BYTES, authToken: env.HF_TOKEN || undefined, debugUpstreamErrors: true });
+  return createQwen2511FastAdapter({
     transport,
     dispatchStore,
     maxImageBytes: MAX_SOURCE_BYTES,
-    timeoutMs: 150000,
+    timeoutMs: 180000,
     status: "ready",
     storeResult: async ({ requestId, bytes, mimeType, metadata }) => {
       const qualityGate = await verifyRoomIdentity({
@@ -306,9 +306,10 @@ export default {
         return json({
           ok: true,
           app: "NEXORA Design Engine",
-          version: "1.0.0",
+          version: "1.1.0",
           provider: "huggingface-zero-gpu",
           model: MODEL,
+          provider_auth_configured: Boolean(env.HF_TOKEN),
           output_storage: "Cloudflare D1 temporary; browser IndexedDB persistent",
           result_ttl_hours: RESULT_TTL_HOURS,
           max_daily_renders_per_ip: MAX_DAILY_RENDERS

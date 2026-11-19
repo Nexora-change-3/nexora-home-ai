@@ -226,7 +226,7 @@ async function fetchAndSaveResult(job, result) {
     blob,
     conceptName: result.concept_name || job.conceptName,
     createdAt: new Date().toISOString(),
-    model: result.model_id || "FireRed 1.1 + Rapid-AIO V23",
+    model: result.model_id || "Qwen Image Edit 2511 + Rapid-AIO-V19 + Style-Transfer",
     recovered: Boolean(result.recovered)
   });
   await dbPut("jobs", { ...job, state: "succeeded" });
