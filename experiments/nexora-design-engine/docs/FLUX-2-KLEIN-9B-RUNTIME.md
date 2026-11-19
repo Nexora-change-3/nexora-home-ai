@@ -1,4 +1,4 @@
-# NEXORA Design Engine 1.2 — runtime decision
+# NEXORA Design Engine 1.2.1 — runtime decision
 
 ## Active image engine
 

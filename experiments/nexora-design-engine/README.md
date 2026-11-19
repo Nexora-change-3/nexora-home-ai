@@ -1,6 +1,6 @@
 # NEXORA DESIGN ENGINE — экспериментальный контур
 
-Статус: самостоятельное приложение NEXORA Design Engine v1.3 в отдельном экспериментальном окружении. Основной графический адаптер — Cloudflare Workers AI FLUX.2 Dev (16 шагов, вход до 512 px, выход 1024×768); Moondream проверяет сохранение типа помещения. Адаптер и полный программный контур покрыты автоматическими тестами. Реальный FLUX.2 Dev инференс ожидает восстановления бесплатной дневной квоты; качество на исходной фотографии пользователя ещё не подтверждено. Production V1/V2 не изменялись.
+Статус: программный каркас v0.4. Связаны Vision Adapter → реестр ограничений → три структурированных Design Brief. Добавлен адаптер Cloudflare Workers AI / Moondream 3.1, но реальный инференс на фото пользователя ещё не выполнялся. Production-интеграции нет.
 
 ## Назначение
 
@@ -82,6 +82,6 @@ node --test experiments/nexora-design-engine/tests/*.test.mjs
 Сначала система должна научиться понимать пространство и проектировать, затем — управлять генерацией, затем — проверять результат. Генеративная модель является сменным рендер-движком, а не носителем всей логики NEXORA.
 
 
-## Release 1.2 runtime
+## Release 1.2.1 runtime
 
-The active renderer is Cloudflare Workers AI FLUX.2 Dev, with Moondream room-identity QA. The app is capped at three generations per UTC day across the entire project; paid fallbacks are disabled. See `docs/FLUX-2-KLEIN-9B-RUNTIME.md`.
+The active renderer is Cloudflare Workers AI FLUX.2 Klein 9B, with Moondream room-identity QA. The app is capped at three generations per UTC day across the entire project; paid fallbacks are disabled. See `docs/FLUX-2-KLEIN-9B-RUNTIME.md`.

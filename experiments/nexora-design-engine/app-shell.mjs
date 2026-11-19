@@ -45,7 +45,7 @@ button{border:0;border-radius:10px;background:var(--accent);color:white;font:600
 </div>
 <div class="panel" id="conceptPanel" hidden>
 <div class="step">02 / Выбор направления</div><h2>Три разные идеи</h2><div id="concepts" class="concepts"></div>
-<div class="consent"><input type="checkbox" id="consent"><label for="consent" style="margin:0;font-weight:500">Я разрешаю обработать выбранную фотографию в Cloudflare Workers AI (FLUX.2 Dev) для генерации и в Moondream для проверки сохранения типа помещения. Исходное фото не сохраняется на сервере NEXORA. При исчерпании бесплатной дневной квоты генерация остановится; платные сервисы не подключаются.</label></div>
+<div class="consent"><input type="checkbox" id="consent"><label for="consent" style="margin:0;font-weight:500">Я разрешаю обработать выбранную фотографию в Cloudflare Workers AI (FLUX.2 Klein 9B) для генерации и в Moondream для проверки сохранения типа помещения. Исходное фото не сохраняется на сервере NEXORA. При исчерпании бесплатной дневной квоты генерация остановится; платные сервисы не подключаются.</label></div>
 <button id="render" class="full" disabled>Создать выбранные варианты</button>
 <div id="renderStatus" class="statusline" aria-live="polite"></div><div class="progress" id="progress"><i id="progressBar"></i></div>
 <p class="notice">Варианты создаются последовательно. Общий лимит — 3 генерации в сутки на весь проект, чтобы использовать только бесплатную дневную квоту Cloudflare Workers AI. Платный резервный сервис отключён.</p>
@@ -57,7 +57,7 @@ button{border:0;border-radius:10px;background:var(--accent);color:white;font:600
 <p class="notice">Исходное фото не сохраняется на сервере NEXORA. При запуске генерации оно передаётся выбранному внешнему сервису. Готовые изображения временно хранятся в NEXORA до 24 часов для восстановления, а затем остаются в локальной базе браузера.</p><button id="clear" class="danger full">Удалить локальные фотографии и результаты</button><div id="clearStatus" class="statusline"></div></div>
 </aside>
 </div>
-<div class="footer">NEXORA Design Engine 1.3 · FLUX.2 Dev через Cloudflare Workers AI · Moondream room-identity quality gate. Результат требует проверки архитектором: модель может ошибаться в геометрии, деталях и функциональности. Не используйте изображение как строительный чертёж.</div>
+<div class="footer">NEXORA Design Engine 1.2.1 · FLUX.2 Klein 9B через Cloudflare Workers AI · Moondream room-identity quality gate. Результат требует проверки архитектором: модель может ошибаться в геометрии, деталях и функциональности. Не используйте изображение как строительный чертёж.</div>
 </main>
 <script>
 const $ = (id) => document.getElementById(id);
@@ -227,7 +227,7 @@ async function fetchAndSaveResult(job, result) {
     blob,
     conceptName: result.concept_name || job.conceptName,
     createdAt: new Date().toISOString(),
-    model: result.model_id || "FLUX.2 Dev",
+    model: result.model_id || "FLUX.2 Klein 9B",
     recovered: Boolean(result.recovered)
   });
   await dbPut("jobs", { ...job, state: "succeeded" });
@@ -239,7 +239,7 @@ async function prepareRenderBlob(blob) {
   try {
     const image = new Image();
     await new Promise((resolve, reject) => { image.onload = resolve; image.onerror = reject; image.src = objectUrl; });
-    let maxDim = 512;
+    let maxDim = 1024;
     let quality = 0.86;
     for (let attempt = 0; attempt < 3; attempt++) {
       const scale = Math.min(1, maxDim / Math.max(image.naturalWidth, image.naturalHeight));
@@ -249,21 +249,19 @@ async function prepareRenderBlob(blob) {
       const context = canvas.getContext("2d", { alpha: false });
       context.drawImage(image, 0, 0, canvas.width, canvas.height);
       const output = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
-      if (output && output.size <= 1500000) return { blob: output, width: canvas.width, height: canvas.height };
+      if (output && output.size <= 1500000) return output;
       maxDim = Math.round(maxDim * 0.85);
       quality = Math.max(0.72, quality - 0.06);
     }
     throw new Error("Не удалось подготовить фотографию для безопасной отправки.");
   } finally { URL.revokeObjectURL(objectUrl); }
 }
-async function renderOne(concept, index, total, renderInput) {
+async function renderOne(concept, index, total, renderBlob) {
   const id = crypto.randomUUID();
   const job = { id, conceptId: concept.concept_id, conceptName: concept.name, state: "submitting", createdAt: new Date().toISOString() };
   await dbPut("jobs", job);
   const form = new FormData();
-  form.append("image", renderInput.blob, "nexora-source.jpg");
-  form.append("imageWidth", String(renderInput.width));
-  form.append("imageHeight", String(renderInput.height));
+  form.append("image", renderBlob, "nexora-source.jpg");
   form.append("requestId", id);
   form.append("externalProcessingConsent", "true");
   form.append("roomType", $("room").value);
@@ -277,8 +275,13 @@ async function renderOne(concept, index, total, renderInput) {
   const response = await fetch("/api/render", { method: "POST", body: form });
   const data = await response.json();
   if (!response.ok) {
+    const knownNoRun = ["WORKERS_AI_FREE_QUOTA_EXHAUSTED", "GLOBAL_DAILY_LIMIT_REACHED", "DAILY_LIMIT_REACHED"].includes(data.error);
+    if (knownNoRun) {
+      await dbDelete("jobs", id);
+      throw new Error(data.message || "Бесплатный дневной лимит генераций исчерпан.");
+    }
     await dbPut("jobs", { ...job, state: data.error || "failed", message: data.message });
-    throw Object.assign(new Error(data.message || "Генерация не завершилась."), { requestId: id });
+    throw Object.assign(new Error(data.message || "Генерация не завершилась."), { requestId: id, code: data.error });
   }
   await fetchAndSaveResult(job, data);
   setStatus("renderStatus", "Готов вариант " + index + " из " + total + ": " + concept.name);
@@ -293,10 +296,10 @@ async function renderSelected() {
   let completed = 0;
   try {
     setStatus("renderStatus", "Подготавливаю уменьшенную копию фотографии. Исходник останется без изменений…");
-    const renderInput = await prepareRenderBlob(sourceBlob);
+    const renderBlob = await prepareRenderBlob(sourceBlob);
     for (const concept of chosen) {
       setStatus("renderStatus", "Генерация " + (completed + 1) + " из " + chosen.length + ": " + concept.name + "…");
-      await renderOne(concept, completed + 1, chosen.length, renderInput);
+      await renderOne(concept, completed + 1, chosen.length, renderBlob);
       completed++;
       $("progressBar").style.width = Math.round(completed / chosen.length * 100) + "%";
     }
@@ -400,7 +403,7 @@ $("clear").addEventListener("click", clearLocal);
   try {
     const health = await fetch("/api/health").then((r) => r.json());
     if (!health.ok || health.provider !== "cloudflare-workers-ai") throw new Error("Native Workers AI provider is unavailable.");
-    $("providerStatus").textContent = "Cloudflare Workers AI · FLUX.2 Dev. До 3 генераций в сутки на весь проект; платные резервные сервисы отключены. Moondream проверяет сохранение типа помещения.";
+    $("providerStatus").textContent = "Cloudflare Workers AI · FLUX.2 Klein 9B. До 3 генераций в сутки на весь проект; платные резервные сервисы отключены. Moondream проверяет сохранение типа помещения.";
     const saved = await dbGet("source", "active");
     if (saved?.blob) setPhoto(saved.blob, saved.name);
     await renderSavedResults();

@@ -21,7 +21,7 @@ test("serves the standalone app with restrictive security headers", async () => 
   assert.match(response.headers.get("content-security-policy"), /frame-ancestors 'none'/);
   const html = await response.text();
   assert.match(html, /NEXORA Design Engine/);
-  assert.match(html, /FLUX\.2 Dev/);
+  assert.match(html, /FLUX\.2 Klein 9B/);
   assert.match(html, /externalProcessingConsent/);
   assert.match(html, /indexedDB/);
 });
@@ -32,8 +32,8 @@ test("serves health metadata without exposing credentials or image data", async 
   assert.equal(response.status, 200);
   assert.equal(body.ok, true);
   assert.equal(body.provider, "cloudflare-workers-ai");
-  assert.match(body.model, /flux-2-dev/);
-  assert.equal(body.version, "1.3.0");
+  assert.match(body.model, /flux-2-klein-9b/);
+  assert.equal(body.version, "1.2.1");
   assert.equal(body.paid_fallback_enabled, false);
   assert.equal(body.output_storage, "Cloudflare D1 temporary; browser IndexedDB persistent");
   assert.equal(JSON.stringify(body).includes("token"), false);
