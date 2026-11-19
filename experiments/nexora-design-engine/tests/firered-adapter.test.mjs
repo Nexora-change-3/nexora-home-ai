@@ -93,8 +93,7 @@ test("blocks adapter creation before upload when live graph validation fails", a
   changedWorkflow["167:147"].inputs.image = ["missing-source", 0];
   await assert.rejects(
     () => createFireRed11ComfyAdapter({ transport, workflow: changedWorkflow, workflowHash }),
-    (error) => error.code === "FIRERED_RUNTIME_INCOMPATIBLE" &&
-      error.details.graph_validation.error_code === "BROKEN_COMFY_LINK"
+    (error) => error.code === "BROKEN_COMFY_LINK"
   );
   assert.equal(calls.includes("upload"), false);
   assert.equal(calls.includes("queue"), false);
