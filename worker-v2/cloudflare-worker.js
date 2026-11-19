@@ -49,11 +49,17 @@ function allowedOrigin(origin) {
 }
 
 function extractJson(text) {
-  const value = String(text || "");
+  const value = String(text || "").trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
   const first = value.indexOf("{");
-  const last = value.lastIndexOf("}");
-  if (first < 0 || last <= first) return null;
-  try { return JSON.parse(value.slice(first, last + 1)); } catch { return null; }
+  if (first < 0) return null;
+  // Try each closing brace from the end; tolerate explanatory text around JSON.
+  for (let last = value.lastIndexOf("}"); last > first; last = value.lastIndexOf("}", last - 1)) {
+    try {
+      const parsed = JSON.parse(value.slice(first, last + 1));
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+    } catch {}
+  }
+  return null;
 }
 
 async function toDataUri(blob) {
@@ -73,6 +79,7 @@ async function askVision(env, blob, question, maxTokens) {
     image,
     question,
     reasoning: false,
+    stream: false,
     temperature: 0.1,
     max_tokens: maxTokens || 1000
   });
@@ -96,7 +103,7 @@ async function analyze(request, env) {
   ].join("\n");
 
   const result = await askVision(env, room, question, 1200);
-  const answer = result && result.answer ? result.answer : "";
+  const answer = result && typeof result.answer === "string" ? result.answer : "";
   const analysis = extractJson(answer);
   if (!analysis) return json({ error: "Не удалось надёжно структурировать анализ фотографии. Повторите анализ.", analysis_text: String(answer).slice(0, 1800) }, 422);
 
