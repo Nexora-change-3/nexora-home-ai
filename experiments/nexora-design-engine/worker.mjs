@@ -134,9 +134,14 @@ function makeConcepts(input) {
   });
 }
 
-function makeAdapter(env) {
+function makeAdapter(env, request = null) {
+  const suppliedToken = request?.headers?.get("x-hf-token")?.trim() || "";
+  if (suppliedToken && (suppliedToken.length > 256 || !/^hf_[A-Za-z0-9]{20,}$/.test(suppliedToken))) {
+    throw fail("INVALID_HF_TOKEN", "Hugging Face token format is invalid.", 400);
+  }
+  const authToken = suppliedToken || env.HF_TOKEN || null;
   const dispatchStore = createD1DispatchStore(env.DB);
-  const transport = createQwen2511FastTransport({ maxOutputBytes: MAX_RESULT_BYTES, authToken: env.HF_TOKEN || null, debugUpstreamErrors: true });
+  const transport = createQwen2511FastTransport({ maxOutputBytes: MAX_RESULT_BYTES, authToken, debugUpstreamErrors: true });
   return createQwen2511FastAdapter({
     transport,
     dispatchStore,
@@ -208,7 +213,7 @@ async function handleRender(request, env) {
   if (!concept) throw fail("INVALID_CONCEPT", "Выбранная концепция не найдена. Сформируйте концепции заново.");
   await env.DB.prepare("DELETE FROM nexora_render_images WHERE expires_at <= ?").bind(new Date().toISOString()).run();
   await enforceRateLimit(env, request, requestId);
-  const adapter = makeAdapter(env);
+  const adapter = makeAdapter(env, request);
   const result = await adapter.render({
     request_id: requestId,
     source_image_ref: sourceImageRef,
@@ -233,7 +238,7 @@ async function handleConcepts(request) {
 async function handleJob(request, env, id, recover = false) {
   if (!/^[0-9a-f-]{36}$/i.test(id)) throw fail("INVALID_REQUEST_ID", "Идентификатор генерации недействителен.");
   if (recover) {
-    const result = await makeAdapter(env).recover(id);
+    const result = await makeAdapter(env, request).recover(id);
     return json(result);
   }
   const row = await env.DB.prepare(
