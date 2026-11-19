@@ -45,7 +45,7 @@ button{border:0;border-radius:10px;background:var(--accent);color:white;font:600
 </div>
 <div class="panel" id="conceptPanel" hidden>
 <div class="step">02 / Выбор направления</div><h2>Три разные идеи</h2><div id="concepts" class="concepts"></div>
-<div class="consent"><input type="checkbox" id="consent">\1Я разрешаю передать выбранную фотографию в Cloudflare Workers AI для анализа помещения (Moondream), разработки трёх концепций (Llama 3.3 70B) и генерации изображений (FLUX.2 Dev). Исходное фото остаётся локальным; на сервере хранятся только концепции и временные результаты. При исчерпании бесплатной квоты генерация остановится, платные сервисы не подключаются.\2</div>
+<div class="consent"><input type="checkbox" id="consent"><label for="consent" style="margin:0;font-weight:500">Я разрешаю передать выбранную фотографию в Cloudflare Workers AI для анализа помещения (Moondream), разработки трёх концепций (Llama 3.3 70B) и генерации изображений (FLUX.2 Dev). NEXORA не сохраняет исходное фото на сервере; оно хранится в браузере. Сервер временно хранит только концепции и результаты. Бесплатная квота ограничена; платные сервисы не подключаются.</label></div>
 <button id="render" class="full" disabled>Создать выбранные варианты</button>
 <div id="renderStatus" class="statusline" aria-live="polite"></div><div class="progress" id="progress"><i id="progressBar"></i></div>
 <p class="notice">Варианты создаются последовательно. Общий лимит — 3 генерации в сутки на весь проект, чтобы использовать только бесплатную дневную квоту Cloudflare Workers AI. Платный резервный сервис отключён.</p>
@@ -57,7 +57,7 @@ button{border:0;border-radius:10px;background:var(--accent);color:white;font:600
 <p class="notice">Исходное фото не сохраняется на сервере NEXORA. При запуске генерации оно передаётся выбранному внешнему сервису. Готовые изображения временно хранятся в NEXORA до 24 часов для восстановления, а затем остаются в локальной базе браузера.</p><button id="clear" class="danger full">Удалить локальные фотографии и результаты</button><div id="clearStatus" class="statusline"></div></div>
 </aside>
 </div>
-<div class="footer">NEXORA Design Engine 1.4 · FLUX.2 Dev через Cloudflare Workers AI · Moondream room-identity quality gate. Результат требует проверки архитектором: модель может ошибаться в геометрии, деталях и функциональности. Не используйте изображение как строительный чертёж.</div>
+<div class="footer">NEXORA Design Engine 1.4 · Llama 3.3 70B Design Brain · FLUX.2 Dev · Moondream Vision/Quality Gate. Результат требует проверки архитектором: модель может ошибаться в геометрии, деталях и функциональности. Не используйте изображение как строительный чертёж.</div>
 </main>
 <script>
 const $ = (id) => document.getElementById(id);

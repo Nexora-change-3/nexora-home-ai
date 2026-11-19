@@ -314,7 +314,6 @@ export default {
           ok: true,
           app: "NEXORA Design Engine",
           version: "1.4.0",
-          provider: "huggingface-zero-gpu",
           model: MODEL,
           provider: PROVIDER_ID,
           model_id: MODEL_ID,

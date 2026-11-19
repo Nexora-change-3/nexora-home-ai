@@ -20,6 +20,8 @@ test("serves the standalone app with restrictive security headers", async () => 
   assert.match(html, /NEXORA Design Engine/);
   assert.match(html, /FLUX\.2 Dev/);
   assert.match(html, /Llama 3\.3 70B/);
+  assert.match(html, /NEXORA не сохраняет исходное фото на сервере/);
+  assert.doesNotMatch(html, /\\\\1|\\\\2/);
   assert.match(html, /externalProcessingConsent/);
   assert.match(html, /indexedDB/);
 });
