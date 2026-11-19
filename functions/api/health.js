@@ -28,7 +28,7 @@ export async function onRequest({ request }) {
       ok: reachable,
       pagesFunction: "reachable",
       generateRoute: reachable ? "reachable" : "failed",
-      worker: reachable ? "reachable",
+      worker: reachable ? "reachable" : "not_confirmed",
       workerStatus: upstream.status,
       authenticationGate: reachable ? "responding" : "not_confirmed",
       aiBindingAndRealKey: "not_tested",
