@@ -1,4 +1,4 @@
-name: FireRed Space smoke generation
+name: FireRed 1.1 candidate smoke generation
 
 on:
   push:
@@ -20,13 +20,13 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Run one real FireRed edit on a public-domain kitchen fixture
+      - name: Run one real FireRed 1.1 variant edit on a public-domain kitchen fixture
         run: |
           python -m pip install --disable-pip-version-check --no-cache-dir gradio_client pillow requests
           python - <<'PY'
           import os, shutil, requests
           from PIL import Image
-          from gradio_client import Client
+          from gradio_client import Client, handle_file
 
           source_url = "https://commons.wikimedia.org/wiki/Special:Redirect/file/Kitchen_interior_design.jpg"
           source_path = "smoke-input.jpg"
@@ -44,20 +44,10 @@ jobs:
               image.verify()
           print("FIXTURE_OK", len(response.content), "bytes")
 
-          client = Client("FireRedTeam/FireRed-Image-Edit-1.1", verbose=False)
-          with open(source_path, "rb") as f:
-              upload = requests.post(
-                  client.src.rstrip("/") + "/gradio_api/upload",
-                  files=[("files", (os.path.basename(source_path), f, "image/jpeg"))],
-                  timeout=60,
-              )
-          upload.raise_for_status()
-          paths = upload.json()
-          if not paths or not isinstance(paths[0], str):
-              raise RuntimeError("Gradio upload returned no server-side file path")
-          server_path = paths[0]
-          print("GRADIO_UPLOAD_OK", server_path)
-
+          # This public ZeroGPU Space uses the FireRed 1.1 pipeline with a
+          # third-party Rapid-AIO transformer variant; it is not the unmodified
+          # official FireRed 1.1 checkpoint.
+          client = Client("ysharma/fast-image-studio", verbose=False)
           prompt = (
               "Restyle this kitchen as a calm, high-end contemporary Scandinavian interior: "
               "natural light-oak cabinetry, pale warm limestone backsplash, refined matte metal "
@@ -68,56 +58,41 @@ jobs:
               "only. Photorealistic architectural interior photography, realistic materials, "
               "credible construction details, balanced exposure."
           )
-          try:
-              result = client.predict(
-                  input_images=[(server_path, None)],
-                  prompt=prompt,
-                  lora_choice="None",
-                  seed=42,
-                  randomize_seed=False,
-                  true_guidance_scale=4.0,
-                  num_inference_steps=20,
-                  height=0,
-                  width=0,
-                  rewrite_prompt=False,
-                  num_images_per_prompt=1,
-                  api_name="/infer",
-              )
-          except Exception as exc:
-              print("FIRERED_API_ERROR_TYPE", type(exc).__name__)
-              print("FIRERED_API_ERROR", repr(exc))
-              raise
-
-          gallery, used_seed = result
-          if not gallery:
-              raise RuntimeError("FireRed returned an empty output gallery")
-          image_data = gallery[0].get("image") if isinstance(gallery[0], dict) else None
-          if not isinstance(image_data, dict):
-              raise RuntimeError("FireRed returned an unexpected gallery item")
-          output_path = image_data.get("path")
+          result = client.predict(
+              image=handle_file(source_path),
+              prompt=prompt,
+              api_name="/edit_image",
+          )
+          if not isinstance(result, dict) or "image" not in result:
+              raise RuntimeError(f"Unexpected result type: {type(result).__name__}")
+          image_data = result["image"]
+          if isinstance(image_data, dict):
+              output_path = image_data.get("path")
+              output_url = image_data.get("url")
+          else:
+              output_path = image_data if isinstance(image_data, str) else None
+              output_url = None
           if output_path and os.path.isfile(output_path):
               shutil.copyfile(output_path, "firered-smoke-output.png")
-          else:
-              output_url = image_data.get("url")
-              if not output_url:
-                  raise RuntimeError("FireRed output has neither a local path nor a URL")
+          elif output_url:
               if output_url.startswith("/"):
                   output_url = client.src.rstrip("/") + output_url
               output_response = requests.get(output_url, timeout=60)
               output_response.raise_for_status()
               with open("firered-smoke-output.png", "wb") as f:
                   f.write(output_response.content)
+          else:
+              raise RuntimeError("FireRed variant returned no accessible output image")
           with Image.open("firered-smoke-output.png") as image:
               image.verify()
           with Image.open("firered-smoke-output.png") as image:
-              print("FIRERED_GENERATION_OK", image.size, image.format, "seed", used_seed)
+              print("FIRERED_GENERATION_OK", image.size, image.format, "result_keys", list(result.keys()))
               with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
-                  summary.write("# FireRed 1.1 smoke generation\n\n")
+                  summary.write("# FireRed 1.1 variant smoke generation\n\n")
                   summary.write("- Result: **real model inference completed**\n")
                   summary.write(f"- Output: {image.width} × {image.height} ({image.format})\n")
-                  summary.write(f"- Seed: {used_seed}\n")
-                  summary.write("- Runtime: official public FireRedTeam Hugging Face Space on ZeroGPU\n")
-                  summary.write("- Mode: base model, no LoRA, 20 steps, one output\n")
+                  summary.write("- Runtime: public Hugging Face ZeroGPU Space ysharma/fast-image-studio\n")
+                  summary.write("- Model: FireRed 1.1 pipeline with Rapid-AIO transformer variant (not the unmodified official checkpoint)\n")
                   summary.write("- Input: public-domain Wikimedia Commons kitchen photo, used only for technical smoke testing\n")
                   summary.write("- This is not the user's photo and is not a design-quality acceptance test.\n")
           PY
