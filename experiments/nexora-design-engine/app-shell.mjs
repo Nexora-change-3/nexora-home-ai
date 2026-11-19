@@ -26,7 +26,7 @@ button{border:0;border-radius:10px;background:var(--accent);color:white;font:600
 </style>
 </head>
 <body>
-<header><div class="brand">NEXORA<small>DESIGN ENGINE</small></div><div class="status">Отдельная версия · 1.0</div></header>
+<header><div class="brand">NEXORA<small>DESIGN ENGINE</small></div><div class="status">Отдельная версия · 1.1</div></header>
 <main>
 <section class="intro"><div class="eyebrow">Interior intelligence / image editing</div><h1>Переосмыслите своё пространство.</h1><p>Загрузите фотографию комнаты, задайте пожелания и получите три разные дизайнерские концепции. Исходное фото остаётся неизменным, каждый результат сохраняется отдельно.</p></section>
 <div class="layout">
@@ -53,10 +53,10 @@ button{border:0;border-radius:10px;background:var(--accent);color:white;font:600
 </section>
 <aside>
 <div class="panel"><div class="step">03 / Результаты</div><h2>Ваши варианты дизайна</h2><div id="results" class="results"><div class="empty">Здесь появятся созданные изображения. Они сохраняются в локальной базе этого браузера.</div></div></div>
-<div class="panel"><h2>Хранение и приватность</h2><p class="notice">Исходное фото не сохраняется на сервере NEXORA. При запуске генерации оно передаётся выбранному внешнему сервису. Готовые изображения временно хранятся в NEXORA до 24 часов для восстановления, а затем остаются в локальной базе браузера.</p><button id="clear" class="danger full">Удалить локальные фотографии и результаты</button><div id="clearStatus" class="statusline"></div></div>
+<div class="panel"><h2>Хранение и приватность</h2><div id="providerStatus" class="notice">Проверяю доступность бесплатного генератора…</div><p class="notice">Исходное фото не сохраняется на сервере NEXORA. При запуске генерации оно передаётся выбранному внешнему сервису. Готовые изображения временно хранятся в NEXORA до 24 часов для восстановления, а затем остаются в локальной базе браузера.</p><button id="clear" class="danger full">Удалить локальные фотографии и результаты</button><div id="clearStatus" class="statusline"></div></div>
 </aside>
 </div>
-<div class="footer">NEXORA Design Engine 1.0 · Экспериментальная модель генерации: FireRed 1.1 с дополнительными Rapid-AIO весами. Результат требует проверки архитектором: модель может ошибаться в геометрии, деталях и функциональности. Не используйте изображение как строительный чертёж.</div>
+<div class="footer">NEXORA Design Engine 1.1 · Модель генерации: Qwen Image Edit 2511 с ускоренным Rapid-AIO V19 и Style-Transfer LoRA. Результат требует проверки архитектором: модель может ошибаться в геометрии, деталях и функциональности. Не используйте изображение как строительный чертёж.</div>
 </main>
 <script>
 const $ = (id) => document.getElementById(id);
@@ -226,7 +226,7 @@ async function fetchAndSaveResult(job, result) {
     blob,
     conceptName: result.concept_name || job.conceptName,
     createdAt: new Date().toISOString(),
-    model: result.model_id || "FireRed 1.1 + Rapid-AIO V23",
+    model: result.model_id || "Qwen Image Edit 2511 + Rapid-AIO V19",
     recovered: Boolean(result.recovered)
   });
   await dbPut("jobs", { ...job, state: "succeeded" });
@@ -395,6 +395,8 @@ $("render").addEventListener("click", renderSelected);
 $("clear").addEventListener("click", clearLocal);
 (async function init() {
   try {
+    const health = await fetch("/api/health").then((r) => r.json());
+    $("providerStatus").textContent = health.provider_auth_configured ? "Личный Hugging Face token подключён. Используется квота вашего бесплатного аккаунта." : "Публичная квота GPU Hugging Face ограничена. Для стабильной бесплатной работы добавьте HF_TOKEN (Read) в Secrets этого Worker; сам токен не отправляйте в чат и не вводите в форму.";
     const saved = await dbGet("source", "active");
     if (saved?.blob) setPhoto(saved.blob, saved.name);
     await renderSavedResults();

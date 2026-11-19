@@ -21,6 +21,7 @@ test("serves the standalone app with restrictive security headers", async () => 
   assert.match(response.headers.get("content-security-policy"), /frame-ancestors 'none'/);
   const html = await response.text();
   assert.match(html, /NEXORA Design Engine/);
+  assert.match(html, /Qwen Image Edit 2511/);
   assert.match(html, /externalProcessingConsent/);
   assert.match(html, /indexedDB/);
 });
@@ -31,6 +32,9 @@ test("serves health metadata without exposing credentials or image data", async 
   assert.equal(response.status, 200);
   assert.equal(body.ok, true);
   assert.equal(body.provider, "huggingface-zero-gpu");
+  assert.match(body.model, /Qwen Image Edit 2511/);
+  assert.equal(body.version, "1.1.0");
+  assert.equal(body.provider_auth_configured, false);
   assert.equal(body.output_storage, "Cloudflare D1 temporary; browser IndexedDB persistent");
   assert.equal(JSON.stringify(body).includes("token"), false);
 });
