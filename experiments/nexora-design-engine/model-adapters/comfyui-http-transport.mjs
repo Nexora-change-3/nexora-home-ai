@@ -64,7 +64,25 @@ export function createComfyUiHttpTransport({
     return response;
   }
 
+  async function getJson(path, code, message, signal) {
+    const response = await request(path, { method: "GET", signal }, code, message);
+    return readJson(response, code, message);
+  }
+
   return Object.freeze({
+    async getObjectInfo({ signal } = {}) {
+      return getJson("/object_info", "RUNTIME_PREFLIGHT_FAILED", "Could not inspect ComfyUI node definitions.", signal);
+    },
+
+    async getModels(folder, { signal } = {}) {
+      assert(["diffusion_models", "loras", "text_encoders", "vae"].includes(folder), "INVALID_MODEL_FOLDER", "The requested ComfyUI model folder is not allowed.");
+      return getJson(`/models/${folder}`, "RUNTIME_PREFLIGHT_FAILED", "Could not inspect ComfyUI model inventory.", signal);
+    },
+
+    async getSystemStats({ signal } = {}) {
+      return getJson("/system_stats", "RUNTIME_PREFLIGHT_FAILED", "Could not inspect ComfyUI runtime information.", signal);
+    },
+
     async uploadImage({ bytes, mimeType, filename, signal }) {
       assert(bytes instanceof Uint8Array && bytes.byteLength > 0, "INVALID_IMAGE", "A non-empty image is required for upload.");
       assert(["image/jpeg", "image/png", "image/webp"].includes(mimeType), "UNSUPPORTED_IMAGE_TYPE", "The source image type is not supported.");
