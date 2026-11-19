@@ -115,9 +115,17 @@ test("propagates cancellation to an in-flight transport operation", async () => 
   assert.equal(receivedSignal.aborted, true);
 });
 
-test("rejects a workflow whose content does not match the pinned SHA-256", async () => {
-  const { adapter, request, calls, workflow } = setup();
-  workflow["1"].inputs.text = "tampered";
+test("rejects a workflow when its configured SHA-256 pin is incorrect", async () => {
+  const { adapter, request, calls } = setup({ options: { workflowHash: `sha256:${"0".repeat(64)}` } });
   await assert.rejects(adapter.render(request), { code: "WORKFLOW_HASH_MISMATCH" });
   assert.equal(calls.length, 0);
+});
+
+test("snapshots the workflow at construction and ignores later caller mutation", async () => {
+  const { adapter, request, workflow, calls } = setup();
+  workflow["1"].inputs.image = "tampered.png";
+  const result = await adapter.render(request);
+  assert.equal(result.status, "succeeded");
+  const queuedWorkflow = calls.find(([name]) => name === "queue")[1].workflow;
+  assert.equal(queuedWorkflow["1"].inputs.image, "input.png");
 });
