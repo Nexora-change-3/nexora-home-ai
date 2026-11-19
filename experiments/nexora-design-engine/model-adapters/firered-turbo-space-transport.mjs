@@ -132,8 +132,13 @@ export function createFireRedTurboSpaceTransport({ baseUrl = DEFAULT_SPACE_ORIGI
         body: JSON.stringify(payload), signal
       }, origin);
     } catch (cause) {
-      const error = fail("QUEUE_OUTCOME_UNKNOWN", "FireRed queue submission could not be confirmed; do not resubmit this request.");
-      error.debug_detail = String(cause?.name || "network_error").slice(0, 80); throw error;
+      const safeRedirectCodes = new Set(["REDIRECT_ORIGIN_REJECTED", "UNSAFE_POST_REDIRECT", "UNSAFE_REDIRECT", "REDIRECT_LOOP_BLOCKED"]);
+      const code = safeRedirectCodes.has(cause?.code) ? cause.code : "QUEUE_OUTCOME_UNKNOWN";
+      const message = code === "QUEUE_OUTCOME_UNKNOWN"
+        ? "FireRed queue submission could not be confirmed; do not resubmit this request."
+        : "FireRed returned an unsafe redirect. The source image was not sent to the redirect target.";
+      const error = fail(code, message);
+      error.debug_detail = String(cause?.debug_detail || cause?.name || "network_error").slice(0, 160); throw error;
     }
     if (!response.ok) {
       const error = fail("QUEUE_OUTCOME_UNKNOWN", `FireRed named endpoint returned HTTP ${response.status}; do not resubmit this request.`);

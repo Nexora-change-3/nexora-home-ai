@@ -27,7 +27,7 @@ test("reads the named-endpoint completion event and validates the same-origin PN
   const result=await transport.getResult({event_id:EVENT});
   assert.equal(result.mimeType,"image/png"); assert.deepEqual([...result.bytes],[...PNG]); assert.equal(result.seed,42);
   assert.equal(calls[0].url,DEFAULT_SPACE_ORIGIN+"/gradio_api/call/infer/"+EVENT);
-  assert.equal(calls[0].init.redirect,"manual"); assert.equal(calls[1].init.redirect,"error");
+  assert.equal(calls[0].init.redirect,"manual"); assert.equal(calls[1].init.redirect,"manual");
 });
 
 test("rejects a foreign output URL before fetching it",async()=>{
