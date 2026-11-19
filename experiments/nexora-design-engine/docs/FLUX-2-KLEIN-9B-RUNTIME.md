@@ -24,3 +24,13 @@
 ## Limits
 
 FLUX.2 Klein 9B is the best available no-paid-runtime baseline validated in this environment. It can still simplify details or preserve too much of the source. The three concept prompts are deliberately separated by cabinetry form, materials, island treatment and lighting. The first release must still be validated on the user's own original room photo before claiming professional design quality.
+
+
+## Live release status (2026-11-19)
+
+- Stable Worker: `https://nexora-design-engine.audiliga.workers.dev/` (release 1.2.1).
+- `/api/health`, root HTML and `/api/concepts` were verified after deployment.
+- The first live `/api/render` call reached the model adapter but Cloudflare returned the free daily quota exhaustion response before an image was generated. The dispatch was marked `outcome_unknown`; no result image was stored. The Worker was corrected to return an explicit HTTP 429 and not offer a recovery retry for this known quota condition.
+- No paid endpoint was called, no paid fallback exists, and no additional render calls are being made until the free allocation resets.
+- The 165-test GitHub Actions run completed successfully: https://github.com/Nexora-change-3/nexora-home-ai/actions/runs/44602396470.
+- No user photo has been sent. The live model probes used only public kitchen fixtures.

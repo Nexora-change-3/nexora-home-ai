@@ -1,3 +1,5 @@
+> **Статус документа:** историческое исследование FireRed 1.1. Для активного релиза 1.2.1 принято другое решение: Cloudflare Workers AI FLUX.2 Klein 9B, с общим лимитом 3 генерации в сутки и без платного fallback. FireRed/ComfyUI остаётся возможным будущим кандидатом, но платный Comfy Cloud не подключён. См. `FLUX-2-KLEIN-9B-RUNTIME.md` и `RELEASE-1.2.1.md`.
+
 # Render Runtime Decision — FireRed Image Edit 1.1
 
 Status: research decision, not a deployed integration.
