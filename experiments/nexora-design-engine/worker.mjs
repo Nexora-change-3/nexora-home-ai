@@ -136,7 +136,7 @@ function makeConcepts(input) {
 
 function makeAdapter(env) {
   const dispatchStore = createD1DispatchStore(env.DB);
-  const transport = createFireRedTurboSpaceTransport({ maxOutputBytes: MAX_RESULT_BYTES });
+  const transport = createFireRedTurboSpaceTransport({ maxOutputBytes: MAX_RESULT_BYTES, debugUpstreamErrors: true });
   return createFireRedTurboSpaceAdapter({
     transport,
     dispatchStore,
@@ -312,6 +312,7 @@ export default {
         message: status >= 500 ? "Сервис не смог завершить операцию. Исходная фотография не изменена." : error.message
       };
       if (error.diagnostic_code) payload.diagnostic = { code: error.diagnostic_code, detail: error.diagnostic_detail || null };
+      if (error.debug_detail) payload.diagnostic = { code: error.code || code, detail: String(error.debug_detail).slice(0, 240) };
       return json(payload, status);
     }
   }

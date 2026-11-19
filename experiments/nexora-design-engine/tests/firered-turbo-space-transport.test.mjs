@@ -69,3 +69,9 @@ test("blocks redirects to a different origin before following them", async () =>
   await assert.rejects(transport.submit({imageBytes:new Uint8Array([1,2,3]),prompt:"A prompt"}),(e)=>e.code==="REDIRECT_ORIGIN_REJECTED");
   assert.equal(calls.length,1);
 });
+
+
+test("exposes bounded upstream event details only when diagnostic mode is enabled", async () => {
+  const transport=createFireRedTurboSpaceTransport({debugUpstreamErrors:true,fetchImpl:async()=>new Response("event: error\ndata: GPU worker failed during inference\n\n",{status:200,headers:{"content-type":"text/event-stream"}})});
+  await assert.rejects(transport.getResult({event_id:EVENT}),(e)=>e.code==="UPSTREAM_RENDER_FAILED"&&e.debug_detail.includes("GPU worker failed"));
+});
