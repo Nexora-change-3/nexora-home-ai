@@ -1,3 +1,4 @@
+import { resolveProviderToken } from "./auth/provider-token.mjs";
 import { createD1DispatchStore } from "./model-adapters/dispatch-ledger.mjs";
 import { createQwen2511FastAdapter } from "./model-adapters/qwen-2511-fast-adapter.mjs";
 import { createQwen2511FastTransport } from "./model-adapters/qwen-2511-fast-transport.mjs";
@@ -135,11 +136,7 @@ function makeConcepts(input) {
 }
 
 function makeAdapter(env, request = null) {
-  const suppliedToken = request?.headers?.get("x-hf-token")?.trim() || "";
-  if (suppliedToken && (suppliedToken.length > 256 || !/^hf_[A-Za-z0-9]{20,}$/.test(suppliedToken))) {
-    throw fail("INVALID_HF_TOKEN", "Hugging Face token format is invalid.", 400);
-  }
-  const authToken = suppliedToken || env.HF_TOKEN || null;
+  const authToken = resolveProviderToken(request, env);
   const dispatchStore = createD1DispatchStore(env.DB);
   const transport = createQwen2511FastTransport({ maxOutputBytes: MAX_RESULT_BYTES, authToken, debugUpstreamErrors: true });
   return createQwen2511FastAdapter({
