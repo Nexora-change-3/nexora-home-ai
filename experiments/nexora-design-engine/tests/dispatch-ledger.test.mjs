@@ -23,9 +23,23 @@ function createFakeD1() {
               const keyIndex = sql.includes("result_json = ?") || sql.includes("prompt_id = ?") ? 2 : 1;
               const row = rows.get(values[keyIndex]);
               if (!row) return { meta: { changes: 0 } };
+              if (sql.includes("SET recovery_token = ?")) {
+                const [token, leaseUntil, updatedAt, requestId, timestamp] = values;
+                if (row.state !== "queued" || (row.recovery_token && row.recovery_lease_until > timestamp)) return { meta: { changes: 0 } };
+                row.recovery_token = token; row.recovery_lease_until = leaseUntil; row.updated_at = updatedAt;
+                return { meta: { changes: 1 } };
+              }
+              if (sql.includes("SET recovery_token = NULL")) {
+                const [updatedAt, requestId, token] = values;
+                if (row.recovery_token !== token) return { meta: { changes: 0 } };
+                row.recovery_token = null; row.recovery_lease_until = null; row.updated_at = updatedAt;
+                return { meta: { changes: 1 } };
+              }
               if (sql.includes("SET state = 'succeeded'")) {
-                if (row.state !== "queued") return { meta: { changes: 0 } };
-                row.state = "succeeded"; row.result_json = values[0]; row.updated_at = values[1]; return { meta: { changes: 1 } };
+                const [resultJson, updatedAt, requestId, token] = values;
+                if (row.state !== "queued" || (sql.includes("recovery_token = ?") ? row.recovery_token !== token : row.recovery_token != null)) return { meta: { changes: 0 } };
+                row.state = "succeeded"; row.result_json = resultJson; row.updated_at = updatedAt; row.recovery_token = null; row.recovery_lease_until = null;
+                return { meta: { changes: 1 } };
               }
               if (sql.includes("SET state = 'queued'")) {
                 if (!["submitting", "outcome_unknown"].includes(row.state)) return { meta: { changes: 0 } };
@@ -73,4 +87,23 @@ test("duplicate request identifiers cannot overwrite the original D1 claim", asy
   const row = await store.get("same-id");
   assert.equal(row.source_image_ref, "source://one");
   assert.equal(row.workflow_hash, "sha256:one");
+});
+
+
+test("D1 recovery lease is exclusive and only its owner can complete the queued dispatch", async () => {
+  const db = createFakeD1();
+  const first = createD1DispatchStore(db, { now: () => "2026-11-19T00:00:00.000Z" });
+  const second = createD1DispatchStore(db, { now: () => "2026-11-19T00:00:01.000Z" });
+  assert.equal(await first.claim({ requestId: "lease-1", sourceImageRef: "source://lease", workflowHash: "sha256:lease" }), true);
+  await first.markQueued("lease-1", "prompt-lease");
+  const lease = { requestId: "lease-1", leaseUntil: "2026-11-19T00:20:00.000Z", now: "2026-11-19T00:00:00.000Z" };
+  assert.equal(await first.claimRecovery({ ...lease, recoveryToken: "worker-a" }), true);
+  assert.equal(await second.claimRecovery({ ...lease, now: "2026-11-19T00:00:01.000Z", recoveryToken: "worker-b" }), false);
+  await first.releaseRecovery("lease-1", "worker-a");
+  assert.equal(await second.claimRecovery({ ...lease, now: "2026-11-19T00:00:01.000Z", recoveryToken: "worker-b" }), true);
+  const result = { request_id: "lease-1", status: "succeeded", image_ref: "result://lease" };
+  await assert.rejects(first.markSucceeded("lease-1", result, "worker-a"), { code: "DISPATCH_STATE_CONFLICT" });
+  await second.markSucceeded("lease-1", result, "worker-b");
+  assert.deepEqual((await first.get("lease-1")).result, result);
+  assert.equal((await first.get("lease-1")).recovery_token, null);
 });
