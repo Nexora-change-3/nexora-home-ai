@@ -100,7 +100,7 @@ test("removes only the specified pending prompt and never interrupts the shared 
   const calls = [];
   const transport = createComfyUiHttpTransport({ ...base, fetchImpl: async (url, init) => {
     calls.push({ url, init });
-    return responses(null, 200);
+    return response(null, 200);
   }});
   const result = await transport.cancelPrompt("job_123");
   assert.deepEqual(result, {

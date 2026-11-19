@@ -74,9 +74,9 @@ function createOperationContext({ timeoutMs, signal, now, onAbort }) {
     try { Promise.resolve(onAbort?.(error)).catch(() => {}); } catch {}
   };
   const timer = setTimeout(() => abort(fail("RENDER_TIMEOUT", "ComfyUI render exceeded the configured timeout.")), timeoutMs);
-  const onAbort = () => abort(fail("CANCELLED", "Render was cancelled."));
-  if (signal?.aborted) onAbort();
-  else signal?.addEventListener("abort", onAbort, { once: true });
+  const handleAbort = () => abort(fail("CANCELLED", "Render was cancelled."));
+  if (signal?.aborted) handleAbort();
+  else signal?.addEventListener("abort", handleAbort, { once: true });
   return {
     signal: controller.signal,
     deadline: now() + timeoutMs,
@@ -86,7 +86,7 @@ function createOperationContext({ timeoutMs, signal, now, onAbort }) {
     },
     close() {
       clearTimeout(timer);
-      signal?.removeEventListener("abort", onAbort);
+      signal?.removeEventListener("abort", handleAbort);
     }
   };
 }
