@@ -1,4 +1,4 @@
-const WORKER_URL = "https://nexora-ai-visualizer.audiliga.workers.dev/generate";
+const WORKER_URL = "https://nexora-ai-visualizer-preview.audiliga.workers.dev/generate";
 const PREVIEW_ORIGIN = "https://feature-cloudflare-image-edi.nexora-home-ai-preview.pages.dev";
 
 export async function onRequest(context) {
