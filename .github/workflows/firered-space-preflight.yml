@@ -1,4 +1,4 @@
-name: FireRed 1.1 experimental Turbo smoke generation
+name: FireRed 1.1 Turbo adapter live smoke test
 
 on:
   push:
@@ -16,93 +16,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          python-version: "3.11"
-      - name: Run one real FireRed 1.1 Turbo edit on a public-domain kitchen fixture
-        run: |
-          python -m pip install --disable-pip-version-check --no-cache-dir gradio_client pillow requests
-          python - <<'PY'
-          import os, shutil, requests, base64, json
-          from PIL import Image
-          from gradio_client import Client
-
-          source_url = "https://commons.wikimedia.org/wiki/Special:Redirect/file/Kitchen_interior_design.jpg"
-          source_path = "smoke-input.jpg"
-          headers = {
-              "User-Agent": "NEXORA-Design-Engine-smoke-test/1.0",
-              "Referer": "https://commons.wikimedia.org/"
-          }
-          response = requests.get(source_url, headers=headers, timeout=45)
-          response.raise_for_status()
-          if len(response.content) > 8 * 1024 * 1024:
-              raise RuntimeError("Smoke fixture exceeded the 8 MiB limit")
-          with open(source_path, "wb") as f:
-              f.write(response.content)
-          with Image.open(source_path) as image:
-              image.verify()
-          print("FIXTURE_OK", len(response.content), "bytes")
-
-          # Third-party experimental Turbo Space: FireRed 1.1 pipeline with
-          # Rapid-AIO transformer variant; not the unmodified official checkpoint.
-          client = Client("someone-in-the-world/FireRed-Experimental-Turbo", verbose=False)
-          images_b64_json = json.dumps([base64.b64encode(response.content).decode("ascii")])
-          prompt = (
-              "Restyle this kitchen as a calm, high-end contemporary Scandinavian interior: "
-              "natural light-oak cabinetry, pale warm limestone backsplash, refined matte metal "
-              "hardware, integrated modern appliances, restrained styling, soft daylight and "
-              "layered warm task lighting. Preserve the original camera viewpoint, room geometry, "
-              "windows, wall openings, countertop run, sink and cooking-zone positions. Do not "
-              "move walls, windows, doors or fixed services. Change finishes, cabinetry and decor "
-              "only. Photorealistic architectural interior photography, realistic materials, "
-              "credible construction details, balanced exposure."
-          )
-          result = client.predict(
-              images_b64_json=images_b64_json,
-              prompt=prompt,
-              seed=42,
-              randomize_seed=False,
-              steps=3,
-              mode="fast",
-              gpu_duration=120,
-              api_name="/infer",
-          )
-          if not isinstance(result, (tuple, list)) or len(result) < 1:
-              raise RuntimeError(f"Unexpected result shape: {type(result).__name__}")
-          image_data = result[0]
-          used_seed = result[1] if len(result) > 1 else 42
-          if isinstance(image_data, dict):
-              output_path = image_data.get("path")
-              output_url = image_data.get("url")
-          else:
-              output_path = image_data if isinstance(image_data, str) else None
-              output_url = None
-          if output_path and os.path.isfile(output_path):
-              shutil.copyfile(output_path, "firered-smoke-output.png")
-          elif output_url:
-              if output_url.startswith("/"):
-                  output_url = client.src.rstrip("/") + output_url
-              output_response = requests.get(output_url, timeout=60)
-              output_response.raise_for_status()
-              with open("firered-smoke-output.png", "wb") as f:
-                  f.write(output_response.content)
-          else:
-              raise RuntimeError("FireRed Turbo returned no accessible output image")
-          with Image.open("firered-smoke-output.png") as image:
-              image.verify()
-          with Image.open("firered-smoke-output.png") as image:
-              print("FIRERED_GENERATION_OK", image.size, image.format, "seed", used_seed)
-              with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
-                  summary.write("# FireRed 1.1 Turbo smoke generation\n\n")
-                  summary.write("- Result: **real model inference completed**\n")
-                  summary.write(f"- Output: {image.width} × {image.height} ({image.format})\n")
-                  summary.write(f"- Seed: {used_seed}\n")
-                  summary.write("- Runtime: public Hugging Face ZeroGPU Space someone-in-the-world/FireRed-Experimental-Turbo\n")
-                  summary.write("- Model: FireRed 1.1 pipeline with Rapid-AIO transformer variant (experimental, not official checkpoint)\n")
-                  summary.write("- Input: public-domain Wikimedia Commons kitchen photo, used only for technical smoke testing\n")
-                  summary.write("- This is not the user's photo and is not a design-quality acceptance test.\n")
-          PY
+          node-version: "22"
+      - name: Run the NEXORA JavaScript adapter against public ZeroGPU
+        run: node experiments/nexora-design-engine/scripts/firered-turbo-live-smoke.mjs
       - name: Upload smoke-test output
         uses: actions/upload-artifact@v4
         with:
