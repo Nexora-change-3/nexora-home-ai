@@ -61,8 +61,8 @@ test("binds the inspected single-image FireRed graph to the renderer", async () 
   assert.equal(request.source_image.bytes[0], 137, "the original source bytes are not mutated");
 });
 
-test("refuses to construct a FireRed adapter from an invalid graph", () => {
-  assert.throws(() => createFireRed11ComfyAdapter({ transport: {}, workflow: { nodes: [], links: [] }, workflowHash }), { code: "INVALID_FIRERED_WORKFLOW" });
+test("refuses to construct a FireRed adapter from an invalid graph", async () => {
+  await assert.rejects(() => createFireRed11ComfyAdapter({ transport: {}, workflow: { nodes: [], links: [] }, workflowHash }), { code: "INVALID_FIRERED_WORKFLOW" });
 });
 
 
