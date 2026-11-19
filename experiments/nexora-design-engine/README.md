@@ -1,11 +1,11 @@
 # NEXORA DESIGN ENGINE — экспериментальный контур
 
-Статус: работающий программный каркас v0.1, без подключения генеративных моделей и без production-интеграции.
+Статус: программный каркас v0.2. Vision adapter boundary и тесты добавлены; реальные vision/image models и генеративные модели пока не подключены. Production-интеграции нет.
 
 ## Назначение
 
 Создать собственную систему проектирования интерьеров, которая:
-1. анализирует исходную фотографию и известные ограничения помещения;
+1. анализирует оригинальную фотографию и известные ограничения помещения;
 2. формирует самостоятельную дизайнерскую концепцию до вызова графической модели;
 3. переводит концепцию в структурированное задание;
 4. передаёт задание независимому адаптеру графической модели;
@@ -30,14 +30,16 @@
 - [x] Общий контракт Design Brief и JSON Schema.
 - [x] Детерминированный Design Brain scaffold: три отличающихся направления — architectural, organic, expressive.
 - [x] Constraint resolver с приоритетом user > verified measurement > vision.
-- [x] Vision Analysis JSON Schema с явными confidence и uncertainty.
+- [x] Vision Analysis JSON Schema с confidence, uncertainty и только гипотетическими размерами.
+- [x] Provider-neutral Vision Adapter Boundary: проверка исходного image ID, формата и байтов; копирование исходных байтов; проверка наблюдений, confidence и областей изображения.
+- [x] Защита от подмены исходной фотографии и от повышения визуальных оценок размеров до verified measurements.
 - [x] Quality Gate с весами, порогом и критическими блокировками.
-- [x] Проверка, что три концепции различаются по тезису, материалам, палитре и тегам.
-- [x] Отдельный GitHub Actions workflow для тестов; последний запуск на commit `f5ccdc4` завершился успешно.
+- [x] Проверка различий между тремя концепциями.
+- [x] GitHub Actions workflow автоматически запускает dependency-free тесты при изменениях в экспериментальной ветке.
 
 ## Что ещё не реализовано
 
-- [ ] Реальный vision model adapter, анализирующий пиксели исходного фото.
+- [ ] Конкретный vision provider adapter, который действительно анализирует пиксели.
 - [ ] AI Design Brain, который рассуждает о помещении и обогащает концепции.
 - [ ] Адаптеры FireRed, Qwen, LongCat и HiDream.
 - [ ] Render Orchestrator и журнал запусков.
@@ -48,24 +50,26 @@
 ## Папки
 
 - `docs/ARCHITECTURE.md` — компоненты и потоки данных.
-- `schemas/design-brief.schema.json` — машинно-проверяемый контракт задания.
+- `schemas/design-brief.schema.json` — контракт задания.
 - `schemas/vision-analysis.schema.json` — формат наблюдений и неопределённости.
+- `src/vision/` — граница анализа фотографии и проверка результата адаптера.
 - `src/design-brain/` — построение концепций.
 - `src/constraints/` — разрешение конфликтов ограничений.
 - `src/quality-gate/` — оценка и блокировка критических дефектов.
-- `evaluation/PROTOCOL.md` — одинаковые условия испытаний и критерии приёмки.
-- `model-adapters/CONTRACT.md` — интерфейс подключаемой графической модели.
+- `model-adapters/` — контракты подключаемых моделей.
+- `evaluation/PROTOCOL.md` — одинаковые условия испытаний.
 - `tests/` — автоматические unit tests.
 
 ## Проверка
 
-Тесты запускаются командой:
-
+Локальная команда:
 ```bash
 node --test experiments/nexora-design-engine/tests/*.test.mjs
 ```
 
-Последний подтверждённый запуск: [GitHub Actions](https://github.com/Nexora-change-3/nexora-home-ai/actions/runs/44552055870) — успешно.
+Workflow: [NEXORA Design Engine tests](https://github.com/Nexora-change-3/nexora-home-ai/actions/workflows/nexora-design-engine-tests.yml).
+
+**Важно:** Vision Adapter Boundary — это пока валидатор и интерфейс, а не подключённая нейросеть. Никакие пиксели пользовательской фотографии ещё не анализировались.
 
 ## Принцип разработки
 
