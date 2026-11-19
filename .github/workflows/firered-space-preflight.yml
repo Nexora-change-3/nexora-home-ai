@@ -1,4 +1,4 @@
-name: FireRed Space API preflight
+name: FireRed Space smoke generation
 
 on:
   push:
@@ -12,22 +12,96 @@ permissions:
   contents: read
 
 jobs:
-  inspect-space:
+  smoke-generation:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Inspect public FireRed Space API (no image upload, no inference)
+      - name: Run one real FireRed edit on a public-domain kitchen fixture
         run: |
-          python -m pip install --disable-pip-version-check --no-cache-dir gradio_client
+          python -m pip install --disable-pip-version-check --no-cache-dir gradio_client pillow requests
           python - <<'PY'
-          from gradio_client import Client
-          space = "FireRedTeam/FireRed-Image-Edit-1.1"
-          client = Client(space, verbose=False)
-          print("SPACE_CONNECTED", client.src)
-          api = client.view_api(return_format="dict")
-          print("API_SCHEMA", api)
+          import os, shutil, requests
+          from PIL import Image
+          from gradio_client import Client, handle_file
+
+          source_url = "https://upload.wikimedia.org/wikipedia/commons/f/f2/Kitchen_interior_design.jpg"
+          source_path = "smoke-input.jpg"
+          response = requests.get(source_url, timeout=45)
+          response.raise_for_status()
+          if len(response.content) > 8 * 1024 * 1024:
+              raise RuntimeError("Smoke fixture exceeded the 8 MiB limit")
+          with open(source_path, "wb") as f:
+              f.write(response.content)
+          with Image.open(source_path) as image:
+              image.verify()
+          print("FIXTURE_OK", len(response.content), "bytes")
+
+          client = Client("FireRedTeam/FireRed-Image-Edit-1.1", verbose=False)
+          prompt = (
+              "Restyle this kitchen as a calm, high-end contemporary Scandinavian interior: "
+              "natural light-oak cabinetry, pale warm limestone backsplash, refined matte metal "
+              "hardware, integrated modern appliances, restrained styling, soft daylight and "
+              "layered warm task lighting. Preserve the original camera viewpoint, room geometry, "
+              "windows, wall openings, countertop run, sink and cooking-zone positions. Do not "
+              "move walls, windows, doors or fixed services. Change finishes, cabinetry and decor "
+              "only. Photorealistic architectural interior photography, realistic materials, "
+              "credible construction details, balanced exposure."
+          )
+          result = client.predict(
+              input_images=[{"image": handle_file(source_path), "caption": None}],
+              prompt=prompt,
+              lora_choice="Lightning",
+              seed=42,
+              randomize_seed=False,
+              true_guidance_scale=1.0,
+              num_inference_steps=8,
+              height=0,
+              width=0,
+              rewrite_prompt=False,
+              num_images_per_prompt=1,
+              api_name="/infer",
+          )
+          gallery, used_seed = result
+          if not gallery:
+              raise RuntimeError("FireRed returned an empty output gallery")
+          image_data = gallery[0].get("image") if isinstance(gallery[0], dict) else None
+          if not isinstance(image_data, dict):
+              raise RuntimeError("FireRed returned an unexpected gallery item")
+          output_path = image_data.get("path")
+          if output_path and os.path.isfile(output_path):
+              shutil.copyfile(output_path, "firered-smoke-output.png")
+          else:
+              output_url = image_data.get("url")
+              if not output_url:
+                  raise RuntimeError("FireRed output has neither a local path nor a URL")
+              if output_url.startswith("/"):
+                  output_url = client.src.rstrip("/") + output_url
+              output_response = requests.get(output_url, timeout=60)
+              output_response.raise_for_status()
+              with open("firered-smoke-output.png", "wb") as f:
+                  f.write(output_response.content)
+          with Image.open("firered-smoke-output.png") as image:
+              image.verify()
+          with Image.open("firered-smoke-output.png") as image:
+              print("FIRERED_GENERATION_OK", image.size, image.format, "seed", used_seed)
+              with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+                  summary.write("# FireRed 1.1 smoke generation\n\n")
+                  summary.write("- Result: **real model inference completed**\n")
+                  summary.write(f"- Output: {image.width} × {image.height} ({image.format})\n")
+                  summary.write(f"- Seed: {used_seed}\n")
+                  summary.write("- Runtime: official public FireRedTeam Hugging Face Space on ZeroGPU\n")
+                  summary.write("- Mode: Lightning LoRA, 8 steps, one output\n")
+                  summary.write("- Input: public-domain Wikimedia Commons kitchen photo, used only for technical smoke testing\n")
+                  summary.write("- This is not the user's photo and is not a design-quality acceptance test.\n")
           PY
+      - name: Upload smoke-test output
+        uses: actions/upload-artifact@v4
+        with:
+          name: firered-smoke-output
+          path: firered-smoke-output.png
+          if-no-files-found: error
+          retention-days: 7
