@@ -1,4 +1,4 @@
-import test from "node:test";
+º—ZµçZ²Ç«¶*'N»žimport test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { createComfyUiRenderAdapter } from "../model-adapters/comfyui-render-adapter.mjs";
@@ -66,7 +66,7 @@ test("fails closed when the configured output node has no image", async () => {
 
 test("rejects a queue acknowledgement without prompt_id", async () => {
   const { adapter, request } = setup({ transport: { async queuePrompt() { return {}; } } });
-  await assert.rejects(adapter.render(request), { code: "QUEUE_FAILED" });
+  await assert.rejects(adapter.render(request), { code: "QUEUE_OUTCOME_UNKNOWN" });
 });
 
 test("ignores caller-supplied workflow URLs and uses only the pinned workflow", async () => {
