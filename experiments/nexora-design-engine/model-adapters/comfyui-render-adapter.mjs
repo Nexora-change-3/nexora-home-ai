@@ -117,7 +117,7 @@ export function createComfyUiRenderAdapter({
   })
 } = {}) {
   assert(transport && ["uploadImage", "queuePrompt", "getHistory", "getOutput", "storeResult"].every((key) => typeof transport[key] === "function"), "INVALID_TRANSPORT", "ComfyUI transport must implement uploadImage, queuePrompt, getHistory, getOutput and storeResult.");
-  assert(dispatchStore && ["get", "claim", "markUnknown", "markQueued", "markSucceeded"].every((key) => typeof dispatchStore[key] === "function"), "INVALID_DISPATCH_STORE", "Dispatch store must implement get, claim, markUnknown, markQueued and markSucceeded.");
+  assert(dispatchStore && ["get", "claim", "markUnknown", "markQueued", "markSucceeded", "claimRecovery", "releaseRecovery"].every((key) => typeof dispatchStore[key] === "function"), "INVALID_DISPATCH_STORE", "Dispatch store must implement dispatch and recovery lease operations.");
   assert(workflow && typeof workflow === "object" && !Array.isArray(workflow), "INVALID_WORKFLOW", "A pinned API-format workflow object is required.");
   assert(nodeInputs?.image && nodeInputs?.prompt, "INVALID_WORKFLOW_MAPPING", "Image and prompt node mappings are required.");
   assert(typeof modelId === "string" && modelId && typeof workflowHash === "string" && /^sha256:[a-f0-9]{64}$/.test(workflowHash), "INVALID_PROVENANCE", "Model ID and a full SHA-256 workflow hash are required.");
@@ -260,6 +260,13 @@ export function createComfyUiRenderAdapter({
     assert(record.state === "queued" && typeof record.prompt_id === "string" && record.prompt_id,
       "DISPATCH_NOT_RECOVERABLE", "Only a confirmed queued job with a saved prompt_id can be recovered. Unknown submissions are never re-queued.");
 
+    const recoveryToken = cryptoImpl?.randomUUID?.();
+    assert(typeof recoveryToken === "string" && recoveryToken, "RECOVERY_LOCK_UNAVAILABLE", "A secure recovery lease token is required.");
+    const leaseNow = new Date(now()).toISOString();
+    const leaseUntil = new Date(now() + timeoutMs * 2).toISOString();
+    const claimed = await dispatchStore.claimRecovery({ requestId, recoveryToken, leaseUntil, now: leaseNow });
+    assert(claimed, "RECOVERY_ALREADY_CLAIMED", "Another process is already recovering this ComfyUI job.");
+    let recoverySucceeded = false;
     const startedAt = now();
     const context = createOperationContext({ timeoutMs, signal, now });
     const checkActive = () => {
@@ -295,10 +302,12 @@ export function createComfyUiRenderAdapter({
         model_id: modelId, model_revision: modelRevision || null, workflow_hash: workflowHash,
         prompt_id: record.prompt_id, elapsed_ms: Math.max(0, now() - startedAt), recovered: true
       };
-      await dispatchStore.markSucceeded(requestId, result);
+      await dispatchStore.markSucceeded(requestId, result, recoveryToken);
+      recoverySucceeded = true;
       return result;
     } finally {
       context.close();
+      if (!recoverySucceeded) await dispatchStore.releaseRecovery(requestId, recoveryToken).catch(() => {});
     }
   }
 
