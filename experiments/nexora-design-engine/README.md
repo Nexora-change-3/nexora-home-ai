@@ -2,10 +2,10 @@
 
 ## Текущее состояние
 
-Код версии 1.4.0 собран в отдельной ветке `experiment/nexora-design-engine`, покрыт 172 автоматическими тестами и загружен в Cloudflare как **неактивная версия №6** Worker `nexora-design-engine`.
+Код версии 1.4.0 собран в отдельной ветке `experiment/nexora-design-engine`, покрыт 172 автоматическими тестами и загружен в Cloudflare как **неактивная версия №7** Worker `nexora-design-engine`.
 
 - Активная стабильная версия Worker пока остаётся **1.2.1**: https://nexora-design-engine.audiliga.workers.dev/
-- Версия 1.4.0 проверена на уровне загрузки приложения, `/api/health` и защитных маршрутов. Её preview URL: https://1de92a29-nexora-design-engine.audiliga.workers.dev/ (Cloudflare помечает его `noindex`).
+- Версия 1.4.0 проверена на уровне загрузки приложения, `/api/health` и защитных маршрутов. Её preview URL: https://83593bb0-nexora-design-engine.audiliga.workers.dev/ (Cloudflare помечает его `noindex`).
 - Версия 1.4.0 **не переключена на основной трафик**. Это сделано намеренно: сначала требуется реальная генерация FLUX.2 Dev и проверка качества на исходной фотографии пользователя.
 - NEXORA V1, V2 и их Production не изменялись.
 
@@ -31,7 +31,7 @@
 ## Состояние проверок
 
 - 174/174 автоматических теста проходят локально.
-- GitHub Actions: [run 44605293709](https://github.com/Nexora-change-3/nexora-home-ai/actions/runs/44605293709) — success для последнего коммита, который уточняет статус room-identity gate.
+- GitHub Actions: [run 44606320213](https://github.com/Nexora-change-3/nexora-home-ai/actions/runs/44605293709) — success для последнего коммита, который уточняет статус room-identity gate.
 - Cloudflare preview version 1.4.0: `/api/health` возвращает FLUX.2 Dev, Llama 3.3 70B, Moondream 3.1, лимиты и `paid_fallback_enabled=false`.
 - Главная страница загружается; маршруты анализа и рендера без согласия отвечают 403.
 - **Пока не выполнено:** реальный вызов Llama Design Brain, реальная генерация FLUX.2 Dev и визуальная оценка результата. Бесплатная квота была исчерпана предыдущими пробами моделей. После сброса квоты нужно провести один полный цикл на техническом публичном fixture, затем — на оригинальном фото пользователя, когда доступ к нему появится.

@@ -1,8 +1,8 @@
 # Release 1.4.0 rollout and rollback
 
 - Active Worker: `nexora-design-engine`, active release 1.2.1.
-- Candidate: version 1.4.0, Cloudflare Worker version 6, inactive preview.
-- Candidate preview URL: `https://1de92a29-nexora-design-engine.audiliga.workers.dev/`.
+- Candidate: version 1.4.0, Cloudflare Worker version 7, inactive preview.
+- Candidate preview URL: `https://83593bb0-nexora-design-engine.audiliga.workers.dev/`.
 - Candidate binds Workers AI (`AI`) and Design Engine D1 (`DB`). Migration 0004 is applied.
 - The stable workers.dev URL and its active deployment have not been changed.
 
