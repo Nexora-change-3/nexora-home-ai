@@ -1,3 +1,5 @@
+import { validateComfyPromptGraph } from "./validate-comfy-prompt-graph.mjs";
+
 const MODEL_FOLDERS = Object.freeze({
   transformer: "diffusion_models",
   lightning_lora: "loras",
@@ -22,6 +24,12 @@ function modelNames(payload) {
 /** Compare the pinned workflow with live ComfyUI /object_info and /models data. */
 export function inspectFireRed11Runtime({ workflow, objectInfo, modelInventory = {} } = {}) {
   assert(workflow && objectInfo && typeof objectInfo === "object", "INVALID_RUNTIME_INFO", "A workflow and live ComfyUI object_info response are required.");
+  let graphValidation;
+  try {
+    graphValidation = validateComfyPromptGraph(workflow, objectInfo);
+  } catch (error) {
+    graphValidation = { valid: false, error_code: error.code || "COMFY_GRAPH_INVALID", message: error.message };
+  }
   const missingNodes = [];
   const missingRequiredInputs = [];
   const unknownInputs = [];
@@ -70,11 +78,12 @@ export function inspectFireRed11Runtime({ workflow, objectInfo, modelInventory =
     }
     if (!modelNames(modelInventory[asset.folder]).includes(asset.name)) missingAssets.push(asset);
   }
-  const compatible = missingNodes.length === 0 && missingRequiredInputs.length === 0 && unknownInputs.length === 0 && missingAssets.length === 0 && unverifiedAssetFolders.length === 0;
+  const compatible = graphValidation.valid && missingNodes.length === 0 && missingRequiredInputs.length === 0 && unknownInputs.length === 0 && missingAssets.length === 0 && unverifiedAssetFolders.length === 0;
   return Object.freeze({
     compatible,
     status: compatible ? (experimentalNodes.length ? "compatible_with_experimental_nodes" : "compatible") : "incompatible_or_incomplete",
     node_count: Object.keys(workflow).length,
+    graph_validation: Object.freeze(graphValidation),
     missing_nodes: Object.freeze(missingNodes),
     missing_required_inputs: Object.freeze(missingRequiredInputs),
     unknown_inputs: Object.freeze(unknownInputs),

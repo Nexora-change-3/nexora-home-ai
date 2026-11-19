@@ -59,7 +59,11 @@ export function validateComfyPromptGraph(prompt, objectInfo) {
       }
       assert(hasSchemaInput(targetSchema, link.input),
         "UNKNOWN_COMFY_INPUT", "Live schema does not declare " + target.class_type + "." + link.input + ".");
-      const outputTypes = sourceSchema.output ?? [];
+      if (!Array.isArray(sourceSchema.output)) {
+        schemaWarnings.push({ code: "OUTPUT_SCHEMA_UNAVAILABLE", node_id: link.from });
+        continue;
+      }
+      const outputTypes = sourceSchema.output;
       assert(link.output < outputTypes.length,
         "COMFY_OUTPUT_INDEX_OUT_OF_RANGE", "Node " + link.from + " has no output slot " + link.output + ".");
       const expected = schemaInputType(targetSchema, link.input);

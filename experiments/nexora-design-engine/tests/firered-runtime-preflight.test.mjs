@@ -19,6 +19,8 @@ const modelInventory = {
 test("accepts a complete runtime inventory and reports experimental nodes", () => {
   const result = inspectFireRed11Runtime({ workflow, objectInfo, modelInventory });
   assert.equal(result.compatible, true);
+  assert.equal(result.graph_validation.valid, true);
+  assert.ok(result.graph_validation.link_count > 0);
   assert.equal(result.status, "compatible_with_experimental_nodes");
   assert.ok(result.experimental_nodes.some((node) => node.class_type === "ComfySwitchNode"));
   assert.equal(result.missing_nodes.length, 0);
@@ -76,4 +78,22 @@ test("preflight queries node info, model inventory and runtime version without q
   assert.equal(calls.includes("object_info"), true);
   assert.equal(calls.includes("system_stats"), true);
   assert.equal(calls.includes("prompt"), false);
+});
+
+test("blocks a FireRed graph with a dangling link before render submission", () => {
+  const changedWorkflow = structuredClone(workflow);
+  changedWorkflow["167:147"].inputs.image = ["missing-node", 0];
+  const result = inspectFireRed11Runtime({ workflow: changedWorkflow, objectInfo, modelInventory });
+  assert.equal(result.compatible, false);
+  assert.equal(result.graph_validation.valid, false);
+  assert.equal(result.graph_validation.error_code, "BROKEN_COMFY_LINK");
+});
+
+test("blocks incompatible live image connection types", () => {
+  const changedInfo = structuredClone(objectInfo);
+  changedInfo.LoadImage.output = ["MASK"];
+  changedInfo.FluxKontextImageScale.input.required.image = ["IMAGE", {}];
+  const result = inspectFireRed11Runtime({ workflow, objectInfo: changedInfo, modelInventory });
+  assert.equal(result.compatible, false);
+  assert.equal(result.graph_validation.error_code, "COMFY_LINK_TYPE_MISMATCH");
 });
