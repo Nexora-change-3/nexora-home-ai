@@ -156,7 +156,7 @@ export function createFireRedTurboSpaceTransport({ baseUrl = DEFAULT_SPACE_ORIGI
     let response;
     try {
       response = await fetchPinned(fetchImpl, origin + "/gradio_api/call/infer/" + encodeURIComponent(handle.event_id), {
-        headers: { accept: "text/event-stream" }, signal
+        headers: { accept: "text/event-stream", "x-gradio-user": "api" }, signal
       }, origin);
     } catch { throw fail("RESULT_FETCH_FAILED", "FireRed completion stream could not be reached."); }
     assert(response.ok, "RESULT_FETCH_FAILED", "FireRed completion stream returned an error.");
