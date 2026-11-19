@@ -8,38 +8,41 @@ const ARCHETYPES = [
   {
     id: "architectural",
     name: "Architectural minimalism",
-    thesis: "A disciplined, architectural composition with a few strong material statements.",
-    palette: ["chalk", "warm grey", "graphite"],
-    materials: ["matte mineral surface", "large-format stone or porcelain", "dark anodized metal"],
-    lighting: ["concealed linear task lighting", "precise architectural accent lighting"],
-    furniture: ["integrated, visually quiet storage", "clean-lined pieces with restrained profiles"],
-    decor: ["one sculptural focal object", "minimal objects with generous negative space"],
-    layout: "Clarify functional zones and sightlines without moving fixed architectural elements.",
-    tags: ["restrained", "architectural", "high-contrast-detail"]
+    thesis: "A calm, high-end architectural kitchen defined by seamless joinery, monolithic pale stone and precise lines.",
+    palette: ["warm ivory", "pale limestone", "soft graphite", "blackened steel"],
+    materials: ["seamless warm-ivory matte-lacquer full-height cabinetry with flush slab fronts and integrated appliances", "monolithic pale-limestone island with a thick edge and bookmatched light-travertine backsplash", "concealed handles, blackened-steel details and discreet mineral wall finishes"],
+    lighting: ["continuous warm linear task lighting concealed beneath cabinetry", "minimal sculptural linear pendant and discreet recessed cove lighting"],
+    furniture: ["slim sculptural island stools in dark timber or leather", "integrated handleless pantry wall with a calm uninterrupted facade"],
+    decor: ["one oversized sculptural ceramic vessel", "minimal objects and generous negative space"],
+    focal_point: "A monolithic pale-limestone island set against a full-height bookmatched travertine backsplash.",
+    layout: "Replace the dated upper-cabinet arrangement with a calm full-height flush pantry composition; keep all openings and fixed services exactly where they are.",
+    tags: ["restrained", "architectural", "seamless-joinery", "pale-stone"]
   },
   {
     id: "organic",
     name: "Warm Mediterranean contemporary",
-    thesis: "A tactile, welcoming interior built around natural textures, soft transitions and human comfort.",
-    palette: ["natural oak", "sand", "warm white", "muted olive"],
-    materials: ["natural wood veneer", "honed stone", "woven or textured natural fibre"],
-    lighting: ["warm layered ambient lighting", "diffused task lighting"],
-    furniture: ["softened silhouettes", "natural timber details", "comfortable practical seating where appropriate"],
-    decor: ["large-scale natural texture", "edited greenery and handcrafted accents"],
-    layout: "Prioritise comfortable everyday use, accessible storage and clear circulation.",
-    tags: ["warm", "natural", "tactile"]
+    thesis: "A tactile, welcoming kitchen with muted olive joinery, smoked oak, warm travertine and softly sculpted forms.",
+    palette: ["muted olive green", "smoked oak", "warm travertine", "aged bronze"],
+    materials: ["muted olive-green matte cabinetry with smoked-oak fluted island detailing", "honed warm-travertine countertops and backsplash with soft natural variation", "smoked-oak joinery, aged-bronze hardware and handmade ceramic accents"],
+    lighting: ["warm layered pendant lighting above the island", "soft integrated shelf lighting and diffused under-cabinet task lighting"],
+    furniture: ["a softly curved island end with comfortable timber stools", "a restrained open display niche with natural timber shelves"],
+    decor: ["handmade ceramics and tactile linen details", "edited greenery and a small number of handcrafted objects"],
+    focal_point: "A softly curved island in warm travertine with fluted smoked-oak detailing and a pair of sculptural pendants.",
+    layout: "Introduce a softer sculptural island treatment and a warm display niche while preserving the original kitchen work zones and clear circulation.",
+    tags: ["warm", "natural", "olive-joinery", "curved-island", "tactile"]
   },
   {
     id: "expressive",
     name: "Expressive walnut and stone",
-    thesis: "A confident, editorial interior using a deliberate focal point, material contrast and distinctive forms.",
-    palette: ["deep ink", "clay", "brushed bronze", "soft ivory"],
-    materials: ["coloured lacquer or stained timber", "expressive stone", "brushed metal"],
-    lighting: ["statement pendant or sculptural fixture", "focused accent lighting"],
-    furniture: ["one distinctive focal piece", "contrasting forms balanced by functional clearances"],
-    decor: ["large art or a crafted focal object", "limited high-impact accessories"],
-    layout: "Build a clear focal hierarchy while keeping all required functions and circulation usable.",
-    tags: ["expressive", "editorial", "material-contrast"]
+    thesis: "A confident editorial kitchen with deep smoked-walnut joinery, a dramatic stone island and refined dark-metal contrast.",
+    palette: ["deep smoked walnut", "warm ivory stone", "charcoal", "brushed bronze"],
+    materials: ["deep smoked-walnut full-height pantry wall and clean slab cabinetry", "large monolithic pale-stone island with a waterfall edge and expressive natural veining", "backlit walnut display shelves, charcoal details and brushed-bronze hardware"],
+    lighting: ["a sculptural statement pendant above the island", "warm backlighting within walnut display shelves and focused accent lighting"],
+    furniture: ["a bold stone island with a softly rounded end and contemporary bar stools", "integrated dark appliances and a strong full-height storage wall"],
+    decor: ["one dramatic stone or metal sculptural object", "curated art and a limited number of high-impact accessories"],
+    focal_point: "A large pale-stone waterfall island in front of a deep smoked-walnut architectural storage wall.",
+    layout: "Create a strong contrast between a dark full-height pantry wall and a sculptural stone island without changing the room envelope or service positions.",
+    tags: ["expressive", "editorial", "walnut", "waterfall-stone", "material-contrast"]
   }
 ];
 
@@ -149,6 +152,7 @@ function buildConcept(input, archetype, index) {
       concept_id: `${archetype.id}-${index + 1}`,
       concept_name: archetype.name,
       design_thesis: archetype.thesis,
+      focal_point: archetype.focal_point,
       style: preferredStyle === "designer-led" ? archetype.name : `${preferredStyle} / ${archetype.name}`,
       layout: {
         strategy: archetype.layout,
@@ -166,6 +170,8 @@ function buildConcept(input, archetype, index) {
     },
     render_requirements: [
       "Create a substantial new interior design, not a recolour of the existing room.",
+      "Change the cabinet door language, island form, material hierarchy and lighting composition to express this specific concept.",
+      "Do not reuse the same generic cabinet and island design across different concept directions.",
       "Treat the source photograph as the immutable visual reference for the room's architecture.",
       "Respect every fixed and preserved constraint; do not invent dimensions.",
       "Only redesign elements explicitly replaceable or not constrained by the user.",
