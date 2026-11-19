@@ -9,7 +9,7 @@ import { APP_HTML } from "./app-shell.mjs";
 const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
 const MAX_RESULT_BYTES = 1_650_000;
 const MAX_DAILY_RENDERS = 3;
-const MAX_DAILY_DESIGN_SESSIONS = 3;
+const MAX_DAILY_DESIGN_SESSIONS = 1;
 const RESULT_TTL_HOURS = 24;
 const ROOM_TYPES = new Set(["kitchen", "living_room", "bedroom", "bathroom", "hallway", "office", "studio", "other"]);
 const MODEL = MODEL_ID;

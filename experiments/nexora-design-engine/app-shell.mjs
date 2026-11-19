@@ -390,7 +390,7 @@ $("clear").addEventListener("click", clearLocal);
   try {
     const health = await fetch("/api/health").then((r) => r.json());
     if (!health.ok || health.provider !== "cloudflare-workers-ai") throw new Error("Native Workers AI provider is unavailable.");
-    $("providerStatus").textContent = "Cloudflare Workers AI · Llama 3.3 70B Design Brain · FLUX.2 Dev · Moondream Vision/Quality Gate. До 3 проектных сессий и 3 генераций в сутки; платные резервные сервисы отключены.";
+    $("providerStatus").textContent = "Cloudflare Workers AI · Llama 3.3 70B Design Brain · FLUX.2 Dev · Moondream Vision/Quality Gate. 1 проектная сессия и до 3 генераций в сутки; платные резервные сервисы отключены.";
     const saved = await dbGet("source", "active");
     if (saved?.blob) setPhoto(saved.blob, saved.name);
     await renderSavedResults();

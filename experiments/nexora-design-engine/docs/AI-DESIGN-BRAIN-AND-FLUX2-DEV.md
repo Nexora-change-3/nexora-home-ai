@@ -4,6 +4,6 @@ After explicit consent, the original photo is analyzed by Cloudflare Workers AI 
 
 Rendering uses FLUX.2 Dev at 16 steps and 1024×768 output. The browser creates a derivative with the long edge no greater than 512 px, leaving the original untouched in IndexedDB. Moondream checks room identity again after rendering; mismatches or uncertainty are rejected.
 
-No paid model, GPU host, prepaid credits or paid fallback is configured. Workers AI uses the included 10,000-neuron daily free allocation; requests stop when it is exhausted. The app caps design sessions and renders at three per UTC day.
+No paid model, GPU host, prepaid credits or paid fallback is configured. Workers AI uses the included 10,000-neuron daily free allocation; requests stop when it is exhausted. The app caps design sessions at one and renders at three per UTC day.
 
 Automated tests cover the code path. Live Llama/FLUX.2 Dev inference and validation on the user's original photo remain required before promotion to a stable public address.
