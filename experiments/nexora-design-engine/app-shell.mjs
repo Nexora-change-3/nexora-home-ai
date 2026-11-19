@@ -57,7 +57,7 @@ button{border:0;border-radius:10px;background:var(--accent);color:white;font:600
 <p class="notice">Исходное фото не сохраняется на сервере NEXORA. При запуске генерации оно передаётся выбранному внешнему сервису. Готовые изображения временно хранятся в NEXORA до 24 часов для восстановления, а затем остаются в локальной базе браузера.</p><button id="clear" class="danger full">Удалить локальные фотографии и результаты</button><div id="clearStatus" class="statusline"></div></div>
 </aside>
 </div>
-<div class="footer">NEXORA Design Engine 1.4 · Llama 3.3 70B Design Brain · FLUX.2 Dev · Moondream Vision/Quality Gate. Результат требует проверки архитектором: модель может ошибаться в геометрии, деталях и функциональности. Не используйте изображение как строительный чертёж.</div>
+<div class="footer">NEXORA Design Engine 1.4 · Llama 3.3 70B Design Brain · FLUX.2 Dev · Moondream room-identity check. Результат требует проверки архитектором: модель может ошибаться в геометрии, деталях и функциональности. Не используйте изображение как строительный чертёж.</div>
 </main>
 <script>
 const $ = (id) => document.getElementById(id);
@@ -390,7 +390,7 @@ $("clear").addEventListener("click", clearLocal);
   try {
     const health = await fetch("/api/health").then((r) => r.json());
     if (!health.ok || health.provider !== "cloudflare-workers-ai") throw new Error("Native Workers AI provider is unavailable.");
-    $("providerStatus").textContent = "Cloudflare Workers AI · Llama 3.3 70B Design Brain · FLUX.2 Dev · Moondream Vision/Quality Gate. 1 проектная сессия и до 3 генераций в сутки; платные резервные сервисы отключены.";
+    $("providerStatus").textContent = "Cloudflare Workers AI · Llama 3.3 70B Design Brain · FLUX.2 Dev · Moondream room-identity check. 1 проектная сессия и до 3 генераций в сутки; платные резервные сервисы отключены.";
     const saved = await dbGet("source", "active");
     if (saved?.blob) setPhoto(saved.blob, saved.name);
     await renderSavedResults();

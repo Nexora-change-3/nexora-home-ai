@@ -322,7 +322,7 @@ export default {
           design_session_limit: MAX_DAILY_DESIGN_SESSIONS,
           daily_render_limit: MAX_DAILY_RENDERS,
           paid_fallback_enabled: false,
-          quality_gate: "moondream-room-identity",
+          quality_gate: "moondream-room-identity-only",
           output_storage: "Cloudflare D1 temporary; browser IndexedDB persistent",
           result_ttl_hours: RESULT_TTL_HOURS,
           max_daily_renders_per_ip: MAX_DAILY_RENDERS
