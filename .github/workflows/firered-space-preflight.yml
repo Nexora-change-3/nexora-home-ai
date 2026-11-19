@@ -26,7 +26,7 @@ jobs:
           python - <<'PY'
           import os, shutil, requests
           from PIL import Image
-          from gradio_client import Client, handle_file
+          from gradio_client import Client
 
           source_url = "https://commons.wikimedia.org/wiki/Special:Redirect/file/Kitchen_interior_design.jpg"
           source_path = "smoke-input.jpg"
@@ -45,14 +45,18 @@ jobs:
           print("FIXTURE_OK", len(response.content), "bytes")
 
           client = Client("FireRedTeam/FireRed-Image-Edit-1.1", verbose=False)
-          uploaded_images, height, width = client.predict(
-              images=[(handle_file(source_path), None)],
-              api_name="/on_image_upload",
-          )
-          if not uploaded_images:
-              raise RuntimeError("FireRed upload preprocessing returned no images")
-          first = uploaded_images[0]
-          print("PREPROCESS_OK", "item_type", type(first).__name__, "height", height, "width", width)
+          with open(source_path, "rb") as f:
+              upload = requests.post(
+                  client.src.rstrip("/") + "/gradio_api/upload",
+                  files=[("files", (os.path.basename(source_path), f, "image/jpeg"))],
+                  timeout=60,
+              )
+          upload.raise_for_status()
+          paths = upload.json()
+          if not paths or not isinstance(paths[0], str):
+              raise RuntimeError("Gradio upload returned no server-side file path")
+          server_path = paths[0]
+          print("GRADIO_UPLOAD_OK", server_path)
 
           prompt = (
               "Restyle this kitchen as a calm, high-end contemporary Scandinavian interior: "
@@ -66,15 +70,15 @@ jobs:
           )
           try:
               result = client.predict(
-                  input_images=uploaded_images,
+                  input_images=[(server_path, None)],
                   prompt=prompt,
                   lora_choice="None",
                   seed=42,
                   randomize_seed=False,
                   true_guidance_scale=4.0,
                   num_inference_steps=20,
-                  height=height,
-                  width=width,
+                  height=0,
+                  width=0,
                   rewrite_prompt=False,
                   num_images_per_prompt=1,
                   api_name="/infer",
