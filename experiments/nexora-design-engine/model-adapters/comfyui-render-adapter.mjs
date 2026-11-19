@@ -15,6 +15,21 @@ function clone(value) {
   return structuredClone(value);
 }
 
+function stableStringify(value) {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+async function digestWorkflow(workflow, cryptoImpl) {
+  assert(cryptoImpl?.subtle && typeof cryptoImpl.subtle.digest === "function", "CRYPTO_UNAVAILABLE", "Web Crypto SHA-256 is required to verify the pinned workflow.");
+  const bytes = new TextEncoder().encode(stableStringify(workflow));
+  const digest = await cryptoImpl.subtle.digest("SHA-256", bytes);
+  return `sha256:${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+}
+
 function validateRequest(request, maxImageBytes) {
   assert(request && typeof request === "object", "INVALID_REQUEST", "Render request is required.");
   for (const field of ["request_id", "source_image_ref", "design_brief", "safety_policy"]) {
@@ -36,6 +51,7 @@ function applyNodeInput(workflow, mapping, value, required = true) {
   }
   const node = workflow[mapping.node_id];
   assert(node && node.inputs && typeof node.inputs === "object", "INVALID_WORKFLOW_MAPPING", `Workflow node ${mapping.node_id} is missing.`);
+  assert(Object.hasOwn(node.inputs, mapping.input_name), "INVALID_WORKFLOW_MAPPING", `Workflow input ${mapping.node_id}.${mapping.input_name} is missing.`);
   node.inputs[mapping.input_name] = value;
 }
 
@@ -51,8 +67,6 @@ function createOperationContext({ timeoutMs, signal, now }) {
   const controller = new AbortController();
   let rejectAbort;
   const aborted = new Promise((_, reject) => { rejectAbort = reject; });
-  // The promise exists before the first transport call; handle its rejection even
-  // when the caller signal was already aborted and no Promise.race is started.
   aborted.catch(() => {});
   const abort = (error) => {
     if (!controller.signal.aborted) controller.abort(error);
@@ -62,7 +76,6 @@ function createOperationContext({ timeoutMs, signal, now }) {
   const onAbort = () => abort(fail("CANCELLED", "Render was cancelled."));
   if (signal?.aborted) onAbort();
   else signal?.addEventListener("abort", onAbort, { once: true });
-
   return {
     signal: controller.signal,
     deadline: now() + timeoutMs,
@@ -80,7 +93,7 @@ function createOperationContext({ timeoutMs, signal, now }) {
 export function createComfyUiRenderAdapter({
   transport, workflow, nodeInputs, outputNodeId, modelId, modelRevision, workflowHash,
   maxImageBytes = DEFAULT_MAX_IMAGE_BYTES, timeoutMs = 10 * 60 * 1000, pollIntervalMs = 1000,
-  now = () => Date.now(),
+  now = () => Date.now(), cryptoImpl = globalThis.crypto,
   sleep = (ms, signal) => new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(signal.reason || fail("CANCELLED", "Render was cancelled."));
     const timer = setTimeout(resolve, ms);
@@ -88,11 +101,12 @@ export function createComfyUiRenderAdapter({
   })
 } = {}) {
   assert(transport && ["uploadImage", "queuePrompt", "getHistory", "getOutput", "storeResult"].every((key) => typeof transport[key] === "function"), "INVALID_TRANSPORT", "ComfyUI transport must implement uploadImage, queuePrompt, getHistory, getOutput and storeResult.");
-  assert(workflow && typeof workflow === "object", "INVALID_WORKFLOW", "A pinned API-format workflow object is required.");
+  assert(workflow && typeof workflow === "object" && !Array.isArray(workflow), "INVALID_WORKFLOW", "A pinned API-format workflow object is required.");
   assert(nodeInputs?.image && nodeInputs?.prompt, "INVALID_WORKFLOW_MAPPING", "Image and prompt node mappings are required.");
-  assert(typeof modelId === "string" && modelId && typeof workflowHash === "string" && workflowHash, "INVALID_PROVENANCE", "Model ID and workflow hash are required.");
+  assert(typeof modelId === "string" && modelId && typeof workflowHash === "string" && /^sha256:[a-f0-9]{64}$/.test(workflowHash), "INVALID_PROVENANCE", "Model ID and a full SHA-256 workflow hash are required.");
   assert(Number.isFinite(timeoutMs) && timeoutMs > 0 && Number.isFinite(pollIntervalMs) && pollIntervalMs >= 0, "INVALID_TIMING", "Timeout and polling interval are invalid.");
 
+  const pinnedWorkflow = clone(workflow);
   const inFlight = new Map();
   const completed = new Map();
 
@@ -123,10 +137,14 @@ export function createComfyUiRenderAdapter({
 
     try {
       checkActive();
+      const actualHash = await context.run(() => digestWorkflow(pinnedWorkflow, cryptoImpl));
+      assert(actualHash === workflowHash, "WORKFLOW_HASH_MISMATCH", "The pinned ComfyUI workflow does not match its configured SHA-256 hash.");
+      checkActive();
+
       const uploaded = await context.run((signal) => transport.uploadImage({ bytes: new Uint8Array(bytes), mimeType, filename: `nexora-source-${request.request_id}`, signal }));
       assert(uploaded && typeof uploaded.name === "string" && uploaded.name, "UPLOAD_FAILED", "ComfyUI did not return a server-side image name.");
 
-      const apiWorkflow = clone(workflow);
+      const apiWorkflow = clone(pinnedWorkflow);
       applyNodeInput(apiWorkflow, nodeInputs.image, uploaded.name);
       applyNodeInput(apiWorkflow, nodeInputs.prompt, request.design_brief.render_instructions || request.design_brief.prompt);
       if (nodeInputs.seed) applyNodeInput(apiWorkflow, nodeInputs.seed, request.seed, false);

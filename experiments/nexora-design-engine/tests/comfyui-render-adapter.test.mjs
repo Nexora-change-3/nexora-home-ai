@@ -1,9 +1,18 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { createComfyUiRenderAdapter } from "../model-adapters/comfyui-render-adapter.mjs";
+
+function stableStringify(value) {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  if (value && typeof value === "object") return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(",")}}`;
+  return JSON.stringify(value);
+}
 
 function setup(overrides = {}) {
   const calls = [];
+  const workflow = { "1": { inputs: { image: "", text: "" } }, "9": { inputs: {} } };
+  const workflowHash = `sha256:${createHash("sha256").update(stableStringify(workflow)).digest("hex")}`;
   const transport = {
     async uploadImage(input) { calls.push(["upload", input]); return { name: "input.png" }; },
     async queuePrompt(input) { calls.push(["queue", input]); return { prompt_id: "prompt-123" }; },
@@ -16,25 +25,18 @@ function setup(overrides = {}) {
     ...overrides.transport
   };
   const adapter = createComfyUiRenderAdapter({
-    transport,
-    workflow: { "1": { inputs: { image: "", text: "" } }, "9": { inputs: {} } },
+    transport, workflow,
     nodeInputs: { image: { node_id: "1", input_name: "image" }, prompt: { node_id: "1", input_name: "text" } },
-    outputNodeId: "9",
-    modelId: "FireRed-Image-Edit-1.1",
-    modelRevision: "1.1",
-    workflowHash: "sha256:fixture",
-    pollIntervalMs: 0,
-    sleep: async () => {},
-    ...overrides.options
+    outputNodeId: "9", modelId: "FireRed-Image-Edit-1.1", modelRevision: "1.1",
+    workflowHash, pollIntervalMs: 0, sleep: async () => {}, ...overrides.options
   });
   const request = {
-    request_id: "req-1",
-    source_image_ref: "nexora://source/original",
+    request_id: "req-1", source_image_ref: "nexora://source/original",
     source_image: { bytes: new Uint8Array([1, 2, 3]), mime_type: "image/png" },
     design_brief: { render_instructions: "Create a warm contemporary kitchen." },
     safety_policy: { preserve_source: true }
   };
-  return { adapter, calls, request };
+  return { adapter, calls, request, workflow };
 }
 
 test("runs upload -> queue -> history -> output -> immutable storage", async () => {
@@ -82,14 +84,7 @@ test("returns the same completed result for an idempotent request_id", async () 
 });
 
 test("surfaces upstream execution errors without exposing raw upstream details", async () => {
-  const errorHistory = {
-    "prompt-123": {
-      status: {
-        status_str: "error",
-        messages: [["execution_error", { exception_message: "private detail" }]]
-      }
-    }
-  };
+  const errorHistory = { "prompt-123": { status: { status_str: "error", messages: [["execution_error", { exception_message: "private detail" }]] } } };
   const { adapter, request } = setup({ transport: { async getHistory() { return errorHistory; } } });
   await assert.rejects(adapter.render(request), (error) => error.code === "UPSTREAM_RENDER_FAILED" && !error.message.includes("private detail"));
 });
@@ -104,15 +99,7 @@ test("honours cancellation before submitting a queued render", async () => {
 
 test("enforces a timeout while an individual transport operation is hanging", async () => {
   let receivedSignal;
-  const { adapter, request } = setup({
-    transport: {
-      uploadImage({ signal }) {
-        receivedSignal = signal;
-        return new Promise(() => {});
-      }
-    },
-    options: { timeoutMs: 15 }
-  });
+  const { adapter, request } = setup({ transport: { uploadImage({ signal }) { receivedSignal = signal; return new Promise(() => {}); } }, options: { timeoutMs: 15 } });
   await assert.rejects(adapter.render(request), { code: "RENDER_TIMEOUT" });
   assert.equal(receivedSignal.aborted, true);
 });
@@ -120,18 +107,17 @@ test("enforces a timeout while an individual transport operation is hanging", as
 test("propagates cancellation to an in-flight transport operation", async () => {
   const controller = new AbortController();
   let receivedSignal;
-  const { adapter, request } = setup({
-    transport: {
-      uploadImage({ signal }) {
-        receivedSignal = signal;
-        return new Promise(() => {});
-      }
-    },
-    options: { timeoutMs: 1000 }
-  });
+  const { adapter, request } = setup({ transport: { uploadImage({ signal }) { receivedSignal = signal; return new Promise(() => {}); } }, options: { timeoutMs: 1000 } });
   const pending = adapter.render({ ...request, signal: controller.signal });
   await new Promise((resolve) => setTimeout(resolve, 5));
   controller.abort();
   await assert.rejects(pending, { code: "CANCELLED" });
   assert.equal(receivedSignal.aborted, true);
+});
+
+test("rejects a workflow whose content does not match the pinned SHA-256", async () => {
+  const { adapter, request, calls, workflow } = setup();
+  workflow["1"].inputs.text = "tampered";
+  await assert.rejects(adapter.render(request), { code: "WORKFLOW_HASH_MISMATCH" });
+  assert.equal(calls.length, 0);
 });
