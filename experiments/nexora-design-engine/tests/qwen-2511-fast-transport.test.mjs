@@ -32,6 +32,6 @@ test("blocks unsafe external redirects before following them",async()=>{
 });
 
 test("rejects safety-check results that are not approved",async()=>{
- const transport=createQwen2511FastTransport({fetchImpl:async(url)=>url.includes("/gradio_api/call/check_safety/")?new Response(sse("complete",[{status:"blocked",label:"unsafe"}]),{status:200,headers:{"content-type":"text/event-stream"}}):new Response(JSON.stringify({event_id:EVENT}),{status:200})});
+ const transport=createQwen2511FastTransport({fetchImpl:async(url,init)=>init.method==="POST"?new Response(JSON.stringify({event_id:EVENT}),{status:200}):new Response(sse("complete",[{status:"blocked",label:"unsafe"}]),{status:200,headers:{"content-type":"text/event-stream"}})});
  await assert.rejects(transport.checkSafety("unsafe prompt"),(e)=>e.code==="PROMPT_REJECTED");
 });
