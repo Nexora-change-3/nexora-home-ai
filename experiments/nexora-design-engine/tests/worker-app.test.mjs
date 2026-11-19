@@ -102,3 +102,12 @@ test("the delivered app client script is syntactically valid", () => {
   assert.ok(match, "App shell must contain its client application script.");
   assert.doesNotThrow(() => new Function(match[1]));
 });
+
+
+test("offers a session-only Hugging Face token field without persisting it", async () => {
+  const response = await worker.fetch(new Request("https://nexora.test/"), {});
+  const html = await response.text();
+  assert.match(html, /id="hfToken" type="password"/);
+  assert.match(html, /X-HF-Token/);
+  assert.match(html, /не сохраняется в IndexedDB/);
+});
