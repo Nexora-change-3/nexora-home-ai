@@ -1,5 +1,5 @@
 import { createD1DispatchStore } from "./model-adapters/dispatch-ledger.mjs";
-import { createWorkersAiFlux2Klein9BAdapter, MODEL_ID, PROVIDER_ID } from "./model-adapters/workers-ai-flux-2-klein-9b.mjs";
+import { createWorkersAiFlux2DevAdapter, MODEL_ID, PROVIDER_ID, STEPS, WIDTH, HEIGHT, GUIDANCE } from "./model-adapters/workers-ai-flux2-dev-adapter.mjs";
 import { verifyRoomIdentity } from "./src/quality-gate/room-identity-gate.mjs";
 import { createDesignConcepts } from "./src/design-brain/concept-planner.mjs";
 import { APP_HTML } from "./app-shell.mjs";
@@ -139,9 +139,13 @@ function makeConcepts(input) {
 function makeAdapter(env, sourceImage = null) {
   if (!env.AI || typeof env.AI.run !== "function") throw fail("WORKERS_AI_UNAVAILABLE", "Cloudflare Workers AI is not configured for this project.", 503);
   const dispatchStore = createD1DispatchStore(env.DB);
-  return createWorkersAiFlux2Klein9BAdapter({
+  return createWorkersAiFlux2DevAdapter({
     AI: env.AI,
     dispatchStore,
+    steps: STEPS,
+    width: WIDTH,
+    height: HEIGHT,
+    guidance: GUIDANCE,
     maxImageBytes: MAX_SOURCE_BYTES,
     maxOutputBytes: MAX_RESULT_BYTES,
     storeResult: async ({ requestId, bytes, mimeType, metadata }) => {
@@ -214,6 +218,9 @@ async function handleRender(request, env) {
   if (!mimeType || (file.type && file.type !== mimeType)) throw fail("UNSUPPORTED_IMAGE_TYPE", "Поддерживаются корректные изображения JPEG, PNG и WebP.");
   const sourceImageRef = "sha256:" + await sha256(bytes);
   const roomType = String(form.get("roomType") || "");
+  const imageWidth = Number(form.get("imageWidth"));
+  const imageHeight = Number(form.get("imageHeight"));
+  if (!Number.isInteger(imageWidth) || !Number.isInteger(imageHeight) || imageWidth <= 0 || imageHeight <= 0 || Math.max(imageWidth, imageHeight) > 512) throw fail("SOURCE_DIMENSIONS_EXCEEDED", "Для FLUX.2 Dev изображение должно быть уменьшено до 512 пикселей по длинной стороне.");
   const input = validateDesignInput({
     sourceImageId: sourceImageRef,
     roomType,
@@ -230,11 +237,11 @@ async function handleRender(request, env) {
   if (!concept) throw fail("INVALID_CONCEPT", "Выбранная концепция не найдена. Сформируйте концепции заново.");
   await env.DB.prepare("DELETE FROM nexora_render_images WHERE expires_at <= ?").bind(new Date().toISOString()).run();
   await enforceRateLimit(env, request, requestId);
-  const adapter = makeAdapter(env, { bytes, contentType: mimeType, roomType });
+  const adapter = makeAdapter(env, { bytes, contentType: mimeType, roomType, width: imageWidth, height: imageHeight });
   const result = await adapter.render({
     request_id: requestId,
     source_image_ref: sourceImageRef,
-    source_image: { bytes, mime_type: mimeType },
+    source_image: { bytes, mime_type: mimeType, width: imageWidth, height: imageHeight },
     design_brief: { render_instructions: concept.render_instructions },
     safety_policy: {
       external_image_processing_consent: true,
@@ -309,9 +316,14 @@ export default {
         return json({
           ok: true,
           app: "NEXORA Design Engine",
-          version: "1.2.0",
-          provider: "huggingface-zero-gpu",
+          version: "1.3.0",
+          provider: PROVIDER_ID,
           model: MODEL,
+          steps: STEPS,
+          output_width: WIDTH,
+          output_height: HEIGHT,
+          input_max_dimension: 512,
+          free_daily_neurons: 10000,
           provider: PROVIDER_ID,
           model_id: MODEL_ID,
           daily_render_limit: MAX_DAILY_RENDERS,
@@ -331,7 +343,7 @@ export default {
       if (result && ["GET", "DELETE"].includes(request.method)) return await handleResult(request, env, result[1]);
       return json({ error: "NOT_FOUND", message: "Страница не найдена." }, 404);
     } catch (error) {
-      const status = Number.isInteger(error.status) ? error.status : error.code === "ZERO_GPU_QUOTA_EXCEEDED" ? 429 : error.code === "PROMPT_REJECTED" ? 422 : 500;
+      const status = Number.isInteger(error.status) ? error.status : error.code === "WORKERS_AI_FREE_QUOTA_EXHAUSTED" ? 429 : error.code === "PROMPT_REJECTED" ? 422 : 500;
       const code = error.code || "INTERNAL_ERROR";
       if (status >= 500) console.error("NEXORA_ENGINE_ERROR", code);
       const payload = {

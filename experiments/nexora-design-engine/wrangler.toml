@@ -8,3 +8,6 @@ preview_urls = false
 binding = "DB"
 database_name = "nexora-design-engine-experiment"
 database_id = "69862f96-a52f-4645-9a3c-fb0a96b8bbcd"
+
+[[ai]]
+binding = "AI"
