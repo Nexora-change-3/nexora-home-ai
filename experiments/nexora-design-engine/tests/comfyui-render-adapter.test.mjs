@@ -82,7 +82,15 @@ test("returns the same completed result for an idempotent request_id", async () 
 });
 
 test("surfaces upstream execution errors without exposing raw upstream details", async () => {
-  const { adapter, request } = setup({ transport: { async getHistory() { return { "prompt-123": { status: { status_str: "error", messages: [["execution_error", { exception_message: "private detail" }]] } }; } } });
+  const errorHistory = {
+    "prompt-123": {
+      status: {
+        status_str: "error",
+        messages: [["execution_error", { exception_message: "private detail" }]]
+      }
+    }
+  };
+  const { adapter, request } = setup({ transport: { async getHistory() { return errorHistory; } } });
   await assert.rejects(adapter.render(request), (error) => error.code === "UPSTREAM_RENDER_FAILED" && !error.message.includes("private detail"));
 });
 
