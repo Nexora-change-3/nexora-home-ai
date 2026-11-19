@@ -32,7 +32,7 @@ const prompt = [
 ].join(" ");
 
 const adapter = createFireRedTurboSpaceAdapter({
-  transport: createFireRedTurboSpaceTransport(),
+  transport: createFireRedTurboSpaceTransport({ debugUpstreamErrors: true }),
   dispatchStore: createMemoryDispatchStore(),
   status: "ready",
   timeoutMs: 150000,
@@ -43,17 +43,24 @@ const adapter = createFireRedTurboSpaceAdapter({
   }
 });
 
-const result = await adapter.render({
-  request_id: "firered-live-smoke-2026-11-19",
-  source_image_ref: "public-fixture://wikimedia-kitchen",
-  source_image: { bytes: sourceBytes, mime_type: sourceMime },
-  design_brief: { render_instructions: prompt },
-  safety_policy: {
-    external_image_processing_consent: true,
-    external_provider: "huggingface-zero-gpu"
-  },
-  seed: 42
-});
+let result;
+try {
+  result = await adapter.render({
+    request_id: "firered-live-smoke-2026-11-19",
+    source_image_ref: "public-fixture://wikimedia-kitchen",
+    source_image: { bytes: sourceBytes, mime_type: sourceMime },
+    design_brief: { render_instructions: prompt },
+    safety_policy: {
+      external_image_processing_consent: true,
+      external_provider: "huggingface-zero-gpu"
+    },
+    seed: 42
+  });
+} catch (error) {
+  if (error.debug_detail) console.error("FIRERED_UPSTREAM_DEBUG", error.debug_detail);
+  console.error("FIRERED_ADAPTER_ERROR", error.code || error.name, error.message);
+  throw error;
+}
 
 if (result.status !== "succeeded" || result.image_ref !== "ci-artifact://firered-smoke-output.png") {
   throw new Error("FireRed adapter returned an invalid result.");
