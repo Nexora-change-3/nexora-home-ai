@@ -20,7 +20,7 @@ function createFakeD1() {
                 rows.set(request_id, { request_id, source_image_ref, workflow_hash, state: "submitting", prompt_id: null, result_json: null, created_at, updated_at });
                 return { meta: { changes: 1 } };
               }
-              const keyIndex = sql.includes("result_json = ?") || sql.includes("prompt_id = ?") ? 2 : 1;
+              const keyIndex = sql.includes("SET recovery_token = ?") ? 3 : sql.includes("result_json = ?") || sql.includes("prompt_id = ?") ? 2 : 1;
               const row = rows.get(values[keyIndex]);
               if (!row) return { meta: { changes: 0 } };
               if (sql.includes("SET recovery_token = ?")) {
