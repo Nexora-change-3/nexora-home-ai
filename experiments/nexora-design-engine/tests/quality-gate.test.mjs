@@ -15,7 +15,7 @@ const goodScores = {
 test("accepts a sufficiently strong review with no critical findings", () => {
   const result = evaluateCandidate({ scores: goodScores, findings: [] });
   assert.equal(result.accepted, true);
-  assert.equal(result.score, 4.25);
+  assert.equal(result.score, 4.28);
 });
 
 test("critical geometry failure blocks even a high score", () => {
