@@ -238,7 +238,7 @@ async function handleRender(request, env) {
       external_image_processing_consent: true,
       external_provider: PROVIDER_ID
     },
-    seed: 42
+    seed: new DataView(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(requestId + ":" + conceptId))).getUint32(0, false)
   });
   return json({ ...result, concept_id: concept.concept_id, concept_name: concept.name, result_url: "/api/results/" + requestId });
 }
