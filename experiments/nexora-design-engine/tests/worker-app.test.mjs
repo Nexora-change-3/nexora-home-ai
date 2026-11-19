@@ -25,6 +25,8 @@ test("serves the standalone app with restrictive security headers", async () => 
   assert.match(html, /externalProcessingConsent/);
   assert.match(html, /Корпуса и фасады мебели/);
   assert.match(html, /Светильники и сценарии освещения/);
+  const replaceField = html.match(/<textarea id="replace">([\s\S]*?)<\/textarea>/);
+  assert.ok(replaceField && replaceField[1].split(/\r?\n/).length >= 3);
   assert.match(html, /indexedDB/);
 });
 

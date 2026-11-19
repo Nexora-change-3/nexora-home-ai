@@ -37,9 +37,21 @@ button{border:0;border-radius:10px;background:var(--accent);color:white;font:600
 <div class="grid2"><div><label for="room">Тип помещения</label><select id="room"><option value="kitchen">Кухня</option><option value="living_room">Гостиная</option><option value="bedroom">Спальня</option><option value="bathroom">Ванная</option><option value="hallway">Прихожая</option><option value="office">Кабинет</option><option value="studio">Студия</option><option value="other">Другое</option></select></div><div><label for="style">Стилевой ориентир</label><select id="style"><option value="designer-led">Пусть дизайнер предложит решение</option><option value="contemporary">Современный</option><option value="minimalism">Минимализм</option><option value="japandi">Japandi</option><option value="scandinavian">Скандинавский</option><option value="classic">Современная классика</option><option value="organic">Органический / природный</option><option value="art-deco">Ар-деко</option><option value="industrial">Индустриальный</option></select></div></div>
 <label for="brief">Что вы хотите изменить?</label><textarea id="brief" placeholder="Например: полностью новое оформление кухни, больше цельных материалов, выразительный остров, спокойная палитра..."></textarea>
 <label for="use">Как будет использоваться помещение?</label><input id="use" placeholder="Например: ежедневная готовка, семейные ужины, работа из дома">
-<label for="fixed">Что нельзя менять? (каждый пункт с новой строки)</label><textarea id="fixed">Несущие стены и геометрия помещения\nОкна и двери\nПотолок\nФиксированные инженерные коммуникации</textarea>
-<label for="preserve">Что обязательно сохранить?</label><textarea id="preserve">Геометрия помещения\nОкна и двери\nПотолок\nФиксированные коммуникации\nРакурс исходной фотографии</textarea>
-<label for="replace">Что можно заменить?</label><textarea id="replace">Корпуса и фасады мебели\nСтолешницы и рабочие поверхности\nОтделка стен и фартук\nСветильники и сценарии освещения\nСвободно стоящая мебель\nФурнитура и декор</textarea>
+<label for="fixed">Что нельзя менять? (каждый пункт с новой строки)</label><textarea id="fixed">Несущие стены и геометрия помещения
+Окна и двери
+Потолок
+Фиксированные инженерные коммуникации</textarea>
+<label for="preserve">Что обязательно сохранить?</label><textarea id="preserve">Геометрия помещения
+Окна и двери
+Потолок
+Фиксированные коммуникации
+Ракурс исходной фотографии</textarea>
+<label for="replace">Что можно заменить?</label><textarea id="replace">Корпуса и фасады мебели
+Столешницы и рабочие поверхности
+Отделка стен и фартук
+Светильники и сценарии освещения
+Свободно стоящая мебель
+Фурнитура и декор</textarea>
 <button id="plan" class="secondary full">Сформировать 3 дизайнерские концепции</button>
 <div id="planStatus" class="statusline" aria-live="polite"></div>
 </div>

@@ -81,7 +81,7 @@ export function buildDesignBrainPrompt(input) {
           focal_point: "one clear visual anchor",
           functional_rationale: "how room functions and circulation are supported",
           preserve: ["ledger-backed preserved element"],
-          replace: ["only explicitly replaceable element"],
+          replace: ["cabinet fronts", "worktops", "lighting fixtures"],
           render_instructions: "detailed photorealistic image-edit instruction tied to the source photo"
         }]
       }, null, 2),
