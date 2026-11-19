@@ -97,7 +97,7 @@ $("analyzeBtn").addEventListener("click",async()=>{
  const button=$("analyzeBtn");button.disabled=true;$("analyzeStatus").textContent="Анализируем геометрию, проёмы, мебель и оборудование…";
  try{
   const room=await resizeBlob(roomFile,511);const form=new FormData();form.append("room_image",room,"room.jpg");form.append("room_type",$("roomType").value);
-  const response=await fetch("/api/v2/analyze",{method:"POST",body:form,cache:"no-store"});const data=await response.json();if(!response.ok)throw new Error(data.error||("Ошибка анализа "+response.status));
+  const response=await fetch("/api/v2/analyze",{method:"POST",body:form,cache:"no-store"});const data=await response.json();if(!response.ok){const detail=typeof data.analysis_text==="string"?data.analysis_text.slice(0,700):"";throw new Error((data.error||("Ошибка анализа "+response.status))+(detail?"\n\nДиагностика ответа модели:\n"+detail:""));}
   analysisData=data;analysisConfirmed=!data.needs_confirmation;
   const a=data.analysis||{};const lines=[];
   lines.push("<strong>Распознано:</strong> "+(a.detected_room_type||"не определено")+" · уверенность "+Math.round((a.confidence||0)*100)+"%");
