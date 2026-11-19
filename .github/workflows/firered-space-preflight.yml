@@ -24,7 +24,7 @@ jobs:
         run: |
           python -m pip install --disable-pip-version-check --no-cache-dir gradio_client pillow requests
           python - <<'PY'
-          import os, shutil, requests, traceback
+          import os, shutil, requests
           from PIL import Image
           from gradio_client import Client, handle_file
 
@@ -45,33 +45,33 @@ jobs:
           print("FIXTURE_OK", len(response.content), "bytes")
 
           client = Client("FireRedTeam/FireRed-Image-Edit-1.1", verbose=False)
-          try:
-              uploaded_images, height, width = client.predict(
-                  images=[{"image": handle_file(source_path), "caption": None}],
-                  api_name="/on_image_upload",
-              )
-              if not uploaded_images:
-                  raise RuntimeError("FireRed upload preprocessing returned no images")
-              print("PREPROCESS_OK", "height", height, "width", width)
+          uploaded_images, height, width = client.predict(
+              images=[{"image": handle_file(source_path), "caption": None}],
+              api_name="/on_image_upload",
+          )
+          if not uploaded_images:
+              raise RuntimeError("FireRed upload preprocessing returned no images")
+          print("PREPROCESS_OK", "height", height, "width", width)
 
-              prompt = (
-                  "Restyle this kitchen as a calm, high-end contemporary Scandinavian interior: "
-                  "natural light-oak cabinetry, pale warm limestone backsplash, refined matte metal "
-                  "hardware, integrated modern appliances, restrained styling, soft daylight and "
-                  "layered warm task lighting. Preserve the original camera viewpoint, room geometry, "
-                  "windows, wall openings, countertop run, sink and cooking-zone positions. Do not "
-                  "move walls, windows, doors or fixed services. Change finishes, cabinetry and decor "
-                  "only. Photorealistic architectural interior photography, realistic materials, "
-                  "credible construction details, balanced exposure."
-              )
+          prompt = (
+              "Restyle this kitchen as a calm, high-end contemporary Scandinavian interior: "
+              "natural light-oak cabinetry, pale warm limestone backsplash, refined matte metal "
+              "hardware, integrated modern appliances, restrained styling, soft daylight and "
+              "layered warm task lighting. Preserve the original camera viewpoint, room geometry, "
+              "windows, wall openings, countertop run, sink and cooking-zone positions. Do not "
+              "move walls, windows, doors or fixed services. Change finishes, cabinetry and decor "
+              "only. Photorealistic architectural interior photography, realistic materials, "
+              "credible construction details, balanced exposure."
+          )
+          try:
               result = client.predict(
                   input_images=uploaded_images,
                   prompt=prompt,
-                  lora_choice="Lightning",
+                  lora_choice="None",
                   seed=42,
                   randomize_seed=False,
-                  true_guidance_scale=1.0,
-                  num_inference_steps=8,
+                  true_guidance_scale=4.0,
+                  num_inference_steps=20,
                   height=height,
                   width=width,
                   rewrite_prompt=False,
@@ -112,7 +112,7 @@ jobs:
                   summary.write(f"- Output: {image.width} × {image.height} ({image.format})\n")
                   summary.write(f"- Seed: {used_seed}\n")
                   summary.write("- Runtime: official public FireRedTeam Hugging Face Space on ZeroGPU\n")
-                  summary.write("- Mode: Lightning LoRA, 8 steps, one output\n")
+                  summary.write("- Mode: base model, no LoRA, 20 steps, one output\n")
                   summary.write("- Input: public-domain Wikimedia Commons kitchen photo, used only for technical smoke testing\n")
                   summary.write("- This is not the user's photo and is not a design-quality acceptance test.\n")
           PY
