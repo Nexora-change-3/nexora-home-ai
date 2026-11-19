@@ -1,0 +1,27 @@
+name: NEXORA Design Engine tests
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - experiment/nexora-design-engine
+    paths:
+      - "experiments/nexora-design-engine/**"
+      - ".github/workflows/nexora-design-engine-tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    name: Design Brain and Quality Gate unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout experiment branch
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Run dependency-free unit tests
+        run: node --test experiments/nexora-design-engine/tests/*.test.mjs
