@@ -61,7 +61,7 @@ test("fetches output only through the configured origin and blocks path traversa
     return response(new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]).buffer, 200, { "content-type": "image/png" });
   }});
   const bytes = await transport.getOutput({ filename: "render.png", subfolder: "2026/session", type: "output" });
-  assert.deepEqual([...bytes], [9, 8, 7]);
+  assert.deepEqual([...bytes], [137, 80, 78, 71, 13, 10, 26, 10]);
   assert.ok(called.startsWith("https://comfy.private.example/view?"));
   await assert.rejects(() => transport.getOutput({ filename: "../secret.png" }), { code: "INVALID_OUTPUT_REFERENCE" });
 });
