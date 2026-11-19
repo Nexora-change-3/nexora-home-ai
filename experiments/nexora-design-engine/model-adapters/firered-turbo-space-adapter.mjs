@@ -23,6 +23,7 @@ function validateRequest(request, maxImageBytes) {
   }
   assert(typeof request.request_id === "string" && request.request_id.trim(), "INVALID_REQUEST", "request_id must be a non-empty string.");
   assert(typeof request.source_image_ref === "string" && request.source_image_ref.trim(), "INVALID_REQUEST", "source_image_ref must be a non-empty string.");
+  assert(typeof request.safety_policy === "object", "INVALID_REQUEST", "safety_policy must be an object.");
   const consent = request.safety_policy.external_image_processing_consent === true &&
     request.safety_policy.external_provider === "huggingface-zero-gpu";
   assert(consent, "EXTERNAL_PROCESSING_CONSENT_REQUIRED",
@@ -68,6 +69,15 @@ async function computeFingerprint(cryptoImpl) {
   });
   const digest = await cryptoImpl.subtle.digest("SHA-256", new TextEncoder().encode(material));
   return "sha256:" + [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function parseEventHandle(serialized) {
+  let handle;
+  try { handle = JSON.parse(serialized); }
+  catch { throw fail("DISPATCH_NOT_RECOVERABLE", "Saved FireRed event handle is malformed."); }
+  assert(handle && typeof handle.event_id === "string" && typeof handle.session_hash === "string",
+    "DISPATCH_NOT_RECOVERABLE", "Saved FireRed event handle is incomplete.");
+  return handle;
 }
 
 export function createFireRedTurboSpaceAdapter({
@@ -184,18 +194,18 @@ export function createFireRedTurboSpaceAdapter({
         gpuDuration: 120,
         signal: deadline.signal
       });
+      assert(submission && typeof submission.event_id === "string" && typeof submission.session_hash === "string",
+        "QUEUE_OUTCOME_UNKNOWN", "FireRed returned no valid event handle.");
+      await dispatchStore.markQueued(requestId, JSON.stringify(submission));
     } catch {
       await dispatchStore.markUnknown(requestId).catch(() => {});
       deadline.close();
       throw fail("QUEUE_OUTCOME_UNKNOWN",
         "FireRed queue submission was not confirmed. The request is blocked from resubmission to prevent duplicate generation.");
     }
-    assert(submission && typeof submission.event_id === "string" && submission.event_id,
-      "QUEUE_OUTCOME_UNKNOWN", "FireRed returned no event identifier; the request must not be resubmitted.");
-    await dispatchStore.markQueued(requestId, submission.event_id);
 
     try {
-      const output = await transport.getResult(submission.event_id, { signal: deadline.signal });
+      const output = await transport.getResult(submission, { signal: deadline.signal });
       const result = await persistResult({
         requestId,
         sourceImageRef: request.source_image_ref,
@@ -233,6 +243,7 @@ export function createFireRedTurboSpaceAdapter({
     if (record.state === "succeeded" && record.result) return record.result;
     assert(record.state === "queued" && typeof record.prompt_id === "string" && record.prompt_id,
       "DISPATCH_NOT_RECOVERABLE", "Only a confirmed queued FireRed event can be recovered; unknown submissions are never retried.");
+    const handle = parseEventHandle(record.prompt_id);
 
     const recoveryToken = cryptoImpl?.randomUUID?.();
     assert(typeof recoveryToken === "string" && recoveryToken, "RECOVERY_LOCK_UNAVAILABLE", "A secure recovery lease token is required.");
@@ -244,11 +255,11 @@ export function createFireRedTurboSpaceAdapter({
     let succeeded = false;
     const deadline = createDeadline({ timeoutMs, signal });
     try {
-      const output = await transport.getResult(record.prompt_id, { signal: deadline.signal });
+      const output = await transport.getResult(handle, { signal: deadline.signal });
       const result = await persistResult({
         requestId,
         sourceImageRef: record.source_image_ref,
-        eventId: record.prompt_id,
+        eventId: handle.event_id,
         output,
         seed: output.seed,
         recovered: true,
