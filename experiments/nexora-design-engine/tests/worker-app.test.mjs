@@ -110,6 +110,19 @@ test("rejects an unknown room type before invoking vision", async () => {
   assert.equal((await response.json()).error, "INVALID_ROOM_TYPE");
 });
 
+test("blocks rendering when the design session belongs to another source photo", async () => {
+  let aiCalls=0;
+  const DB={prepare(sql){return {bind(){return this;},async first(){return {source_image_id:"sha256:another-photo",room_type:"kitchen",concepts_json:"[]",expires_at:new Date(Date.now()+3600000).toISOString()};},async run(){return {meta:{changes:0}};}};}};
+  const form=new FormData();
+  form.append("image",new Blob([Uint8Array.from([255,216,255,0,1])],{type:"image/jpeg"}),"source.jpg");
+  form.append("requestId","11111111-1111-4111-8111-111111111111");
+  form.append("externalProcessingConsent","true");
+  form.append("roomType","kitchen");form.append("imageWidth","512");form.append("imageHeight","340");
+  form.append("designSessionId","22222222-2222-4222-8222-222222222222");form.append("sourceImageId","sha256:client-photo");form.append("conceptId","architectural-clarity");
+  const response=await worker.fetch(sameOriginRequest("/api/render",{method:"POST",body:form}),{DB,AI:{async run(){aiCalls++;throw new Error("must not run");}}});
+  assert.equal(response.status,409);assert.equal((await response.json()).error,"DESIGN_SESSION_MISMATCH");assert.equal(aiCalls,0);
+});
+
 test("the delivered app client script is syntactically valid", () => {
   const match = APP_HTML.match(/<script>([\s\S]*?)<\/script>/);
   assert.ok(match, "App shell must contain its client application script.");
