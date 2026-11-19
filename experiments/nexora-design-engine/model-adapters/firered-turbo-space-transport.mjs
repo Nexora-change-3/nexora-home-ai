@@ -22,7 +22,7 @@ function toBase64(input) {
   return btoa(binary);
 }
 
-function parseSseCompletion(body) {
+function parseSseCompletion(body, { debugUpstreamErrors = false } = {}) {
   const blocks = String(body).split(/\r?\n\r?\n/);
   for (const block of blocks) {
     const event = block.match(/^event:\s*(.+)$/m)?.[1]?.trim();
@@ -31,7 +31,11 @@ function parseSseCompletion(body) {
       .map((line) => line.slice(5).trimStart())
       .join("\n");
     if (!data) continue;
-    if (event === "error") throw fail("UPSTREAM_RENDER_FAILED", "FireRed Space reported an inference error.");
+    if (event === "error") {
+      const error = fail("UPSTREAM_RENDER_FAILED", "FireRed Space reported an inference error.");
+      if (debugUpstreamErrors) error.debug_detail = data.slice(0, 500).replace(/[\r\n]/g, " ");
+      throw error;
+    }
     if (event === "complete") {
       try { return JSON.parse(data); }
       catch { throw fail("INVALID_UPSTREAM_RESPONSE", "FireRed Space returned invalid completion data."); }
@@ -57,8 +61,7 @@ function resolveImageUrl(imageData, origin) {
 
   const path = imageData && typeof imageData.path === "string" ? imageData.path : null;
   assert(path && path.length <= 2048, "OUTPUT_NOT_FOUND", "FireRed Space returned no accessible output image.");
-  const url = new URL("/gradio_api/file=" + encodeURIComponent(path), origin);
-  return url.toString();
+  return new URL("/gradio_api/file=" + encodeURIComponent(path), origin).toString();
 }
 
 function validateImageBytes(bytes, mimeType, maxBytes) {
@@ -88,7 +91,8 @@ function validateImageBytes(bytes, mimeType, maxBytes) {
 export function createFireRedTurboSpaceTransport({
   baseUrl = DEFAULT_SPACE_ORIGIN,
   fetchImpl = globalThis.fetch,
-  maxOutputBytes = DEFAULT_MAX_OUTPUT_BYTES
+  maxOutputBytes = DEFAULT_MAX_OUTPUT_BYTES,
+  debugUpstreamErrors = false
 } = {}) {
   assert(typeof fetchImpl === "function", "INVALID_FETCH", "A fetch implementation is required.");
   const parsed = new URL(baseUrl);
@@ -145,7 +149,7 @@ export function createFireRedTurboSpaceTransport({
       throw fail("RESULT_FETCH_FAILED", "FireRed result stream could not be reached.");
     }
     assert(response.ok, "RESULT_FETCH_FAILED", "FireRed result stream returned an error.");
-    const completion = parseSseCompletion(await response.text());
+    const completion = parseSseCompletion(await response.text(), { debugUpstreamErrors });
     const data = Array.isArray(completion) ? completion : completion?.data;
     assert(Array.isArray(data) && data.length >= 1, "INVALID_UPSTREAM_RESPONSE", "FireRed completion did not include result data.");
     const imageData = data[0];
