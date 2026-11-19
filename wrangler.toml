@@ -1,0 +1,7 @@
+name = "nexora-ai-visualizer"
+main = "worker/cloudflare-worker.js"
+compatibility_date = "2026-11-17"
+workers_dev = true
+
+[ai]
+binding = "AI"
