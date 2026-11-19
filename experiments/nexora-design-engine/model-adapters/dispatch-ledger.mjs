@@ -29,16 +29,6 @@ export function createMemoryDispatchStore() {
       records.set(requestId, { request_id: requestId, source_image_ref: sourceImageRef, workflow_hash: workflowHash, state: "submitting", prompt_id: null, result: null, recovery_token: null, recovery_lease_until: null });
       return true;
     },
-    async claimRecovery({ requestId, recoveryToken, leaseUntil, now: timestamp }) {
-      const sql = "UPDATE " + table + " SET recovery_token = ?, recovery_lease_until = ?, updated_at = ? WHERE request_id = ? AND state = 'queued' AND (recovery_token IS NULL OR recovery_lease_until <= ?)";
-      const result = await db.prepare(sql).bind(recoveryToken, leaseUntil, timestamp, requestId, timestamp).run();
-      return Number(result && result.meta && result.meta.changes || 0) === 1;
-    },
-    async releaseRecovery(requestId, recoveryToken) {
-      const sql = "UPDATE " + table + " SET recovery_token = NULL, recovery_lease_until = NULL, updated_at = ? WHERE request_id = ? AND recovery_token = ?";
-      const result = await db.prepare(sql).bind(now(), requestId, recoveryToken).run();
-      return Number(result && result.meta && result.meta.changes || 0) === 1;
-    },
     async markUnknown(requestId) {
       const row = records.get(requestId);
       assert(row, "DISPATCH_RECORD_NOT_FOUND", "Dispatch record does not exist.");
@@ -85,6 +75,16 @@ export function createD1DispatchStore(db, options = {}) {
   }
   return Object.freeze({
     get,
+    async claimRecovery({ requestId, recoveryToken, leaseUntil, now: timestamp }) {
+      const sql = "UPDATE " + table + " SET recovery_token = ?, recovery_lease_until = ?, updated_at = ? WHERE request_id = ? AND state = 'queued' AND (recovery_token IS NULL OR recovery_lease_until <= ?)";
+      const result = await db.prepare(sql).bind(recoveryToken, leaseUntil, timestamp, requestId, timestamp).run();
+      return Number(result && result.meta && result.meta.changes || 0) === 1;
+    },
+    async releaseRecovery(requestId, recoveryToken) {
+      const sql = "UPDATE " + table + " SET recovery_token = NULL, recovery_lease_until = NULL, updated_at = ? WHERE request_id = ? AND recovery_token = ?";
+      const result = await db.prepare(sql).bind(now(), requestId, recoveryToken).run();
+      return Number(result && result.meta && result.meta.changes || 0) === 1;
+    },
     async claim({ requestId, sourceImageRef, workflowHash }) {
       const timestamp = now();
       const sql = "INSERT OR IGNORE INTO " + table + " (request_id, source_image_ref, workflow_hash, state, prompt_id, result_json, created_at, updated_at) VALUES (?, ?, ?, 'submitting', NULL, NULL, ?, ?)";
