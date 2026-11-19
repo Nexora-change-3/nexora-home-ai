@@ -76,6 +76,23 @@ function cloneRequestForm(source){
   }
   return copy;
 }
+function sendCloudflareRequestXHR(form,settings){
+  return new Promise((resolve,reject)=>{
+    const xhr=new XMLHttpRequest();
+    xhr.open('POST','/api/generate',true);
+    xhr.responseType='blob';
+    xhr.timeout=180000;
+    xhr.setRequestHeader('X-NEXORA-KEY',settings.key);
+    xhr.onload=()=>{
+      const contentType=xhr.getResponseHeader('Content-Type')||'application/octet-stream';
+      resolve(new Response(xhr.response,{status:xhr.status,statusText:xhr.statusText,headers:{'Content-Type':contentType}}));
+    };
+    xhr.onerror=()=>reject(new Error('Safari XMLHttpRequest: сетевая ошибка при обращении к Pages Function'));
+    xhr.ontimeout=()=>reject(new Error('Safari XMLHttpRequest: превышено время ожидания ответа Cloudflare'));
+    xhr.onabort=()=>reject(new Error('Safari XMLHttpRequest: запрос был прерван'));
+    xhr.send(cloneRequestForm(form));
+  });
+}
 async function sendCloudflareRequest(form,settings){
   let proxyError=null;
   const formInfo=()=>Array.from(form.entries()).map(([name,value])=>({name,type:typeof value==='string'?'text':(value.type||'blob'),size:typeof value==='string'?value.length:value.size}));
@@ -101,8 +118,12 @@ async function sendCloudflareRequest(form,settings){
       location.replace(target.href);
       throw new Error('Safari перезапускает NEXORA без Service Worker. После перезагрузки нажмите «Создать 3 варианта» ещё раз.');
     }
-    const context={online:navigator.onLine,secureContext:isSecureContext,serviceWorkerControlled:!!(navigator.serviceWorker&&navigator.serviceWorker.controller),serviceWorkerBypass:bypassActive,form:formInfo(),proxy:describe(proxyError),direct:describe(directError)};
-    throw new Error('Диагностика отправки (без ключа): '+JSON.stringify(context));
+    try{
+      return await sendCloudflareRequestXHR(form,settings);
+    }catch(xhrError){
+      const context={online:navigator.onLine,secureContext:isSecureContext,serviceWorkerControlled:!!(navigator.serviceWorker&&navigator.serviceWorker.controller),serviceWorkerBypass:bypassActive,form:formInfo(),proxy:describe(proxyError),direct:describe(directError),xhr:describe(xhrError)};
+      throw new Error('Диагностика отправки (без ключа): '+JSON.stringify(context));
+    }
   }
 }
 const initialAI=getAISettings();$('aiEndpoint').value=initialAI.endpoint||'https://nexora-ai-visualizer.audiliga.workers.dev/generate';$('aiKey').value=initialAI.key||'';
