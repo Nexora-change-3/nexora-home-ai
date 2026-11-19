@@ -30,7 +30,7 @@
 
 ## Состояние проверок
 
-- 172/172 автоматических теста проходят локально.
+- 174/174 автоматических теста проходят локально.
 - GitHub Actions: [run 44605293709](https://github.com/Nexora-change-3/nexora-home-ai/actions/runs/44605293709) — success для последнего коммита, который уточняет статус room-identity gate.
 - Cloudflare preview version 1.4.0: `/api/health` возвращает FLUX.2 Dev, Llama 3.3 70B, Moondream 3.1, лимиты и `paid_fallback_enabled=false`.
 - Главная страница загружается; маршруты анализа и рендера без согласия отвечают 403.
