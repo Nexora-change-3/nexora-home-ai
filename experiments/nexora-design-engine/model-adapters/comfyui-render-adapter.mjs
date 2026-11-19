@@ -22,9 +22,7 @@ function validateRequest(request, maxImageBytes) {
   }
   assert(typeof request.request_id === "string" && request.request_id.trim(), "INVALID_REQUEST", "request_id must be a non-empty string.");
   assert(request.source_image && request.source_image.bytes, "SOURCE_IMAGE_UNAVAILABLE", "Backend-resolved source image bytes are required.");
-  const bytes = request.source_image.bytes instanceof Uint8Array
-    ? request.source_image.bytes
-    : new Uint8Array(request.source_image.bytes);
+  const bytes = request.source_image.bytes instanceof Uint8Array ? request.source_image.bytes : new Uint8Array(request.source_image.bytes);
   assert(bytes.byteLength > 0 && bytes.byteLength <= maxImageBytes, "INVALID_IMAGE_SIZE", "Source image is empty or exceeds the configured size limit.");
   const mimeType = request.source_image.mime_type;
   assert(ALLOWED_MIME_TYPES.has(mimeType), "UNSUPPORTED_IMAGE_TYPE", "Only JPEG, PNG and WebP source images are accepted.");
@@ -46,17 +44,16 @@ function findOutputImage(historyEntry, outputNodeId) {
   const nodeOutput = outputNodeId ? outputs?.[outputNodeId] : Object.values(outputs || {}).find((item) => Array.isArray(item?.images) && item.images.length);
   const image = nodeOutput?.images?.[0];
   assert(image && typeof image.filename === "string" && image.filename, "OUTPUT_NOT_FOUND", "ComfyUI completed without a configured output image.");
-  return {
-    filename: image.filename,
-    subfolder: typeof image.subfolder === "string" ? image.subfolder : "",
-    type: typeof image.type === "string" ? image.type : "output"
-  };
+  return { filename: image.filename, subfolder: typeof image.subfolder === "string" ? image.subfolder : "", type: typeof image.type === "string" ? image.type : "output" };
 }
 
 function createOperationContext({ timeoutMs, signal, now }) {
   const controller = new AbortController();
   let rejectAbort;
   const aborted = new Promise((_, reject) => { rejectAbort = reject; });
+  // The promise exists before the first transport call; handle its rejection even
+  // when the caller signal was already aborted and no Promise.race is started.
+  aborted.catch(() => {});
   const abort = (error) => {
     if (!controller.signal.aborted) controller.abort(error);
     rejectAbort(error);
@@ -81,31 +78,16 @@ function createOperationContext({ timeoutMs, signal, now }) {
 }
 
 export function createComfyUiRenderAdapter({
-  transport,
-  workflow,
-  nodeInputs,
-  outputNodeId,
-  modelId,
-  modelRevision,
-  workflowHash,
-  maxImageBytes = DEFAULT_MAX_IMAGE_BYTES,
-  timeoutMs = 10 * 60 * 1000,
-  pollIntervalMs = 1000,
+  transport, workflow, nodeInputs, outputNodeId, modelId, modelRevision, workflowHash,
+  maxImageBytes = DEFAULT_MAX_IMAGE_BYTES, timeoutMs = 10 * 60 * 1000, pollIntervalMs = 1000,
   now = () => Date.now(),
   sleep = (ms, signal) => new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(signal.reason || fail("CANCELLED", "Render was cancelled."));
     const timer = setTimeout(resolve, ms);
-    signal?.addEventListener("abort", () => {
-      clearTimeout(timer);
-      reject(signal.reason || fail("CANCELLED", "Render was cancelled."));
-    }, { once: true });
+    signal?.addEventListener("abort", () => { clearTimeout(timer); reject(signal.reason || fail("CANCELLED", "Render was cancelled.")); }, { once: true });
   })
 } = {}) {
-  assert(transport && typeof transport.uploadImage === "function" &&
-    typeof transport.queuePrompt === "function" &&
-    typeof transport.getHistory === "function" &&
-    typeof transport.getOutput === "function" &&
-    typeof transport.storeResult === "function", "INVALID_TRANSPORT", "ComfyUI transport must implement uploadImage, queuePrompt, getHistory, getOutput and storeResult.");
+  assert(transport && ["uploadImage", "queuePrompt", "getHistory", "getOutput", "storeResult"].every((key) => typeof transport[key] === "function"), "INVALID_TRANSPORT", "ComfyUI transport must implement uploadImage, queuePrompt, getHistory, getOutput and storeResult.");
   assert(workflow && typeof workflow === "object", "INVALID_WORKFLOW", "A pinned API-format workflow object is required.");
   assert(nodeInputs?.image && nodeInputs?.prompt, "INVALID_WORKFLOW_MAPPING", "Image and prompt node mappings are required.");
   assert(typeof modelId === "string" && modelId && typeof workflowHash === "string" && workflowHash, "INVALID_PROVENANCE", "Model ID and workflow hash are required.");
@@ -119,7 +101,6 @@ export function createComfyUiRenderAdapter({
     const requestId = request.request_id;
     if (completed.has(requestId)) return completed.get(requestId);
     assert(!inFlight.has(requestId), "DUPLICATE_REQUEST_IN_PROGRESS", "A render with this request_id is already running.");
-
     const operation = runRender(request);
     inFlight.set(requestId, operation);
     try {
@@ -142,12 +123,7 @@ export function createComfyUiRenderAdapter({
 
     try {
       checkActive();
-      const uploaded = await context.run((signal) => transport.uploadImage({
-        bytes: new Uint8Array(bytes),
-        mimeType,
-        filename: `nexora-source-${request.request_id}`,
-        signal
-      }));
+      const uploaded = await context.run((signal) => transport.uploadImage({ bytes: new Uint8Array(bytes), mimeType, filename: `nexora-source-${request.request_id}`, signal }));
       assert(uploaded && typeof uploaded.name === "string" && uploaded.name, "UPLOAD_FAILED", "ComfyUI did not return a server-side image name.");
 
       const apiWorkflow = clone(workflow);
@@ -156,14 +132,9 @@ export function createComfyUiRenderAdapter({
       if (nodeInputs.seed) applyNodeInput(apiWorkflow, nodeInputs.seed, request.seed, false);
       checkActive();
 
-      const queued = await context.run((signal) => transport.queuePrompt({
-        workflow: apiWorkflow,
-        clientId: request.request_id,
-        signal
-      }));
+      const queued = await context.run((signal) => transport.queuePrompt({ workflow: apiWorkflow, clientId: request.request_id, signal }));
       assert(queued && typeof queued.prompt_id === "string" && queued.prompt_id, "QUEUE_FAILED", "ComfyUI did not acknowledge the render job.");
       let historyEntry;
-
       while (true) {
         checkActive();
         const history = await context.run((signal) => transport.getHistory(queued.prompt_id, { signal }));
@@ -181,31 +152,15 @@ export function createComfyUiRenderAdapter({
       const outputBytes = rendered instanceof Uint8Array ? rendered : new Uint8Array(rendered);
       assert(outputBytes.byteLength > 0, "EMPTY_OUTPUT", "ComfyUI returned an empty output image.");
       const stored = await context.run((signal) => transport.storeResult({
-        requestId: request.request_id,
-        bytes: outputBytes,
-        mimeType: "image/png",
-        metadata: {
-          source_image_ref: request.source_image_ref,
-          provider: "comfyui",
-          model_id: modelId,
-          model_revision: modelRevision || null,
-          workflow_hash: workflowHash,
-          prompt_id: queued.prompt_id,
-          output
-        },
+        requestId: request.request_id, bytes: outputBytes, mimeType: "image/png",
+        metadata: { source_image_ref: request.source_image_ref, provider: "comfyui", model_id: modelId, model_revision: modelRevision || null, workflow_hash: workflowHash, prompt_id: queued.prompt_id, output },
         signal
       }));
       assert(stored && typeof stored.image_ref === "string" && stored.image_ref, "RESULT_STORAGE_FAILED", "NEXORA result storage did not return an immutable image reference.");
-
       return {
-        request_id: request.request_id,
-        status: "succeeded",
-        image_ref: stored.image_ref,
-        model_id: modelId,
-        model_revision: modelRevision || null,
-        workflow_hash: workflowHash,
-        prompt_id: queued.prompt_id,
-        elapsed_ms: Math.max(0, now() - startedAt)
+        request_id: request.request_id, status: "succeeded", image_ref: stored.image_ref,
+        model_id: modelId, model_revision: modelRevision || null, workflow_hash: workflowHash,
+        prompt_id: queued.prompt_id, elapsed_ms: Math.max(0, now() - startedAt)
       };
     } finally {
       context.close();
@@ -213,10 +168,7 @@ export function createComfyUiRenderAdapter({
   }
 
   return Object.freeze({
-    id: "comfyui-firered-image-edit",
-    provider: "comfyui",
-    modelId,
-    status: "ready",
+    id: "comfyui-firered-image-edit", provider: "comfyui", modelId, status: "ready",
     capabilities: Object.freeze(["image-edit", "instruction-following", "source-image-preservation"]),
     render
   });
