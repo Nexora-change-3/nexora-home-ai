@@ -4,6 +4,7 @@ import { createFireRedTurboSpaceAdapter } from "../model-adapters/firered-turbo-
 import { createMemoryDispatchStore } from "../model-adapters/dispatch-ledger.mjs";
 
 const PNG = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3]);
+const HANDLE = { event_id: "event_12345678", session_hash: "123e4567-e89b-12d3-a456-426614174000" };
 
 function makeRequest(overrides = {}) {
   return {
@@ -23,7 +24,7 @@ function makeRequest(overrides = {}) {
 function makeAdapter({ transport = {}, storeResult, dispatchStore = createMemoryDispatchStore(), now } = {}) {
   return createFireRedTurboSpaceAdapter({
     transport: {
-      submit: async () => ({ event_id: "event_12345678" }),
+      submit: async () => HANDLE,
       getResult: async () => ({ bytes: PNG, mimeType: "image/png", seed: 42 }),
       ...transport
     },
@@ -35,7 +36,7 @@ function makeAdapter({ transport = {}, storeResult, dispatchStore = createMemory
 
 test("requires explicit provider-specific consent before sending the source image", async () => {
   let submitted = 0;
-  const adapter = makeAdapter({ transport: { submit: async () => { submitted += 1; return { event_id: "event_12345678" }; } } });
+  const adapter = makeAdapter({ transport: { submit: async () => { submitted += 1; return HANDLE; } } });
   const request = makeRequest({
     safety_policy: { external_image_processing_consent: false, external_provider: "huggingface-zero-gpu" }
   });
@@ -46,11 +47,13 @@ test("requires explicit provider-specific consent before sending the source imag
 test("renders once, stores a new immutable result and returns pinned provenance", async () => {
   let submits = 0;
   let stored;
+  let receivedHandle;
   const dispatchStore = createMemoryDispatchStore();
   const adapter = makeAdapter({
     dispatchStore,
     transport: {
-      submit: async () => { submits += 1; return { event_id: "event_12345678" }; }
+      submit: async () => { submits += 1; return HANDLE; },
+      getResult: async (handle) => { receivedHandle = handle; return { bytes: PNG, mimeType: "image/png", seed: 42 }; }
     },
     storeResult: async (value) => {
       stored = value;
@@ -63,8 +66,9 @@ test("renders once, stores a new immutable result and returns pinned provenance"
   assert.equal(result.provider, "huggingface-zero-gpu");
   assert.match(result.model_revision, /FireRed-Image-Edit-1.1/);
   assert.match(result.space_revision, /91b831cc23f0ee770fc2d9c80a4619339a245275/);
-  assert.equal(result.event_id, "event_12345678");
+  assert.equal(result.event_id, HANDLE.event_id);
   assert.equal(submits, 1);
+  assert.deepEqual(receivedHandle, HANDLE);
   assert.equal(stored.metadata.source_image_ref, "nexora://source/original-1");
   assert.equal(stored.metadata.provider, "huggingface-zero-gpu");
   assert.notEqual(result.image_ref, "nexora://source/original-1");
@@ -87,15 +91,17 @@ test("marks an ambiguous submission unknown and blocks a duplicate retry", async
   assert.equal(submits, 1);
 });
 
-test("recovers a queued event without submitting a second generation", async () => {
+test("recovers a queued event using its saved event and session handle without resubmitting", async () => {
   let submits = 0;
   let resultCalls = 0;
+  let receivedHandle;
   const dispatchStore = createMemoryDispatchStore();
   const adapter = makeAdapter({
     dispatchStore,
     transport: {
-      submit: async () => { submits += 1; return { event_id: "event_12345678" }; },
-      getResult: async () => {
+      submit: async () => { submits += 1; return HANDLE; },
+      getResult: async (handle) => {
+        receivedHandle = handle;
         resultCalls += 1;
         if (resultCalls === 1) throw new Error("temporary stream interruption");
         return { bytes: PNG, mimeType: "image/png", seed: 42 };
@@ -108,6 +114,7 @@ test("recovers a queued event without submitting a second generation", async () 
   assert.equal(recovered.status, "succeeded");
   assert.equal(recovered.recovered, true);
   assert.equal(recovered.image_ref, "nexora://result/recovered-1");
+  assert.deepEqual(receivedHandle, HANDLE);
   assert.equal(submits, 1);
   assert.equal(resultCalls, 2);
 });
