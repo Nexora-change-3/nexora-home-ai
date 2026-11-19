@@ -18,7 +18,7 @@
 .style-description-lightbox{position:fixed;inset:0;z-index:100001;display:none;align-items:center;justify-content:center;padding:16px;background:rgba(3,8,15,.94);backdrop-filter:blur(7px)}
 .style-description-lightbox.open{display:flex}
 .style-description-panel{position:relative;width:min(100%,820px);max-height:94vh;overflow-y:auto;overscroll-behavior:contain;background:#101d2d;color:var(--text);border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:0 24px 80px rgba(0,0,0,.5)}
-.style-description-close{position:sticky;top:0;float:right;z-index:2;width:42px;height:42px;border:1px solid var(--line);border-radius:50%;background:#1c2b3e;color:#fff;font-size:28px;line-height:1;cursor:pointer;margin:-6px -6px 6px 10px}
+.style-description-close{position:sticky;top:0;float:right;z-index:2;width:56px;height:56px;border:1px solid var(--line);border-radius:50%;background:#1c2b3e;color:#fff;font-size:28px;line-height:1;cursor:pointer;margin:-6px -6px 6px 10px}
 .style-description-image{display:block;width:100%;max-height:52vh;object-fit:contain;background:#08111d;border-radius:12px;clear:both}
 .style-description-title{font-size:clamp(21px,4vw,28px);line-height:1.2;margin:18px 0 10px;color:#fff}
 .style-description-lightbox .style-description{display:block!important;margin:0 0 8px;color:#e2eaf2;font-size:clamp(17px,2.5vw,19px);line-height:1.6;font-weight:400}
@@ -242,6 +242,9 @@ function openStyleDescription(src,title,description,trigger){
     const heading=document.createElement('h2');heading.className='style-description-title';
     const paragraph=document.createElement('p');paragraph.className='style-description';
     panel.append(close,image,heading,paragraph);box.appendChild(panel);
+    image.addEventListener('click',()=>closeStyleDescription());
+    let styleTouchStartY=0;panel.addEventListener('touchstart',e=>{if(e.touches&&e.touches.length===1)styleTouchStartY=e.touches[0].clientY},{passive:true});
+    panel.addEventListener('touchend',e=>{if(!e.changedTouches||!e.changedTouches.length)return;const deltaY=e.changedTouches[0].clientY-styleTouchStartY;if(deltaY>110&&panel.scrollTop<=0)closeStyleDescription()},{passive:true});
     box.addEventListener('click',()=>closeStyleDescription());panel.addEventListener('click',e=>e.stopPropagation());close.addEventListener('click',()=>closeStyleDescription());
     document.addEventListener('keydown',e=>{if(e.key==='Escape'&&box.classList.contains('open'))closeStyleDescription()});document.body.appendChild(box);
   }
