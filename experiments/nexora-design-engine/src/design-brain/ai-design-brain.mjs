@@ -5,6 +5,7 @@
  */
 
 const REQUIRED_TEXT = [
+  "name",
   "design_thesis",
   "layout_strategy",
   "focal_point",
@@ -68,6 +69,7 @@ export function buildDesignBrainPrompt(input) {
         source_image_immutable: true,
         concepts: [{
           concept_id: "unique-id",
+          name: "short distinct design title",
           design_thesis: "specific concept rationale",
           layout_strategy: "spatial organization without unsupported geometry changes",
           material_palette: ["surface, finish, tone, intended location"],

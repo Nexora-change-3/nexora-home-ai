@@ -1,12 +1,15 @@
 import { createD1DispatchStore } from "./model-adapters/dispatch-ledger.mjs";
-import { createWorkersAiFlux2Klein9BAdapter, MODEL_ID, PROVIDER_ID } from "./model-adapters/workers-ai-flux-2-klein-9b.mjs";
+import { createWorkersAiFlux2DevAdapter, MODEL_ID, PROVIDER_ID, STEPS, WIDTH, HEIGHT, GUIDANCE } from "./model-adapters/workers-ai-flux2-dev-adapter.mjs";
 import { verifyRoomIdentity } from "./src/quality-gate/room-identity-gate.mjs";
-import { createDesignConcepts } from "./src/design-brain/concept-planner.mjs";
+import { createDesignSession } from "./src/design-brain/design-session.mjs";
+import { createMoondreamWorkersAIAdapter } from "./model-adapters/workers-ai-moondream.mjs";
+import { createWorkersAiDesignBrainAdapter, DESIGN_BRAIN_MODEL_ID } from "./model-adapters/workers-ai-design-brain.mjs";
 import { APP_HTML } from "./app-shell.mjs";
 
 const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
 const MAX_RESULT_BYTES = 1_650_000;
 const MAX_DAILY_RENDERS = 3;
+const MAX_DAILY_DESIGN_SESSIONS = 3;
 const RESULT_TTL_HOURS = 24;
 const ROOM_TYPES = new Set(["kitchen", "living_room", "bedroom", "bathroom", "hallway", "office", "studio", "other"]);
 const MODEL = MODEL_ID;
@@ -139,9 +142,10 @@ function makeConcepts(input) {
 function makeAdapter(env, sourceImage = null) {
   if (!env.AI || typeof env.AI.run !== "function") throw fail("WORKERS_AI_UNAVAILABLE", "Cloudflare Workers AI is not configured for this project.", 503);
   const dispatchStore = createD1DispatchStore(env.DB);
-  return createWorkersAiFlux2Klein9BAdapter({
+  return createWorkersAiFlux2DevAdapter({
     AI: env.AI,
     dispatchStore,
+    steps: STEPS, width: WIDTH, height: HEIGHT, guidance: GUIDANCE,
     maxImageBytes: MAX_SOURCE_BYTES,
     maxOutputBytes: MAX_RESULT_BYTES,
     storeResult: async ({ requestId, bytes, mimeType, metadata }) => {
@@ -213,28 +217,22 @@ async function handleRender(request, env) {
   const mimeType = sniffImageMime(bytes);
   if (!mimeType || (file.type && file.type !== mimeType)) throw fail("UNSUPPORTED_IMAGE_TYPE", "Поддерживаются корректные изображения JPEG, PNG и WebP.");
   const sourceImageRef = "sha256:" + await sha256(bytes);
-  const roomType = String(form.get("roomType") || "");
-  const input = validateDesignInput({
-    sourceImageId: sourceImageRef,
-    roomType,
-    stylePreference: form.get("stylePreference"),
-    userBrief: form.get("userBrief"),
-    intendedUse: form.get("intendedUse"),
-    fixed: form.get("fixed"),
-    preserve: form.get("preserve"),
-    replaceable: form.get("replaceable")
-  });
-  const concepts = makeConcepts(input);
-  const conceptId = String(form.get("conceptId") || "");
-  const concept = concepts.find((item) => item.concept_id === conceptId);
-  if (!concept) throw fail("INVALID_CONCEPT", "Выбранная концепция не найдена. Сформируйте концепции заново.");
+  const roomType=String(form.get("roomType")||""),imageWidth=Number(form.get("imageWidth")),imageHeight=Number(form.get("imageHeight"));
+  if(!Number.isInteger(imageWidth)||!Number.isInteger(imageHeight)||imageWidth<=0||imageHeight<=0||Math.max(imageWidth,imageHeight)>512)throw fail("SOURCE_DIMENSIONS_EXCEEDED","Для FLUX.2 Dev изображение должно быть уменьшено до 512 пикселей по длинной стороне.");
+  const designSessionId=String(form.get("designSessionId")||""),sourceImageId=String(form.get("sourceImageId")||""),conceptId=String(form.get("conceptId")||"");
+  if(!/^[0-9a-f-]{36}$/i.test(designSessionId)||!sourceImageId.startsWith("sha256:")||!conceptId)throw fail("DESIGN_SESSION_REQUIRED","Сначала сформируйте концепции по исходной фотографии.");
+  const sessionRow=await env.DB.prepare("SELECT source_image_id, room_type, concepts_json, expires_at FROM nexora_design_sessions WHERE session_id = ? LIMIT 1").bind(designSessionId).first();
+  if(!sessionRow||sessionRow.expires_at<=new Date().toISOString())throw fail("DESIGN_SESSION_EXPIRED","Сессия проектирования истекла. Сформируйте концепции заново.",410);
+  if(sessionRow.source_image_id!==sourceImageId||sessionRow.room_type!==roomType)throw fail("DESIGN_SESSION_MISMATCH","Концепции относятся к другой фотографии или типу помещения.",409);
+  let savedConcepts;try{savedConcepts=JSON.parse(sessionRow.concepts_json);}catch{throw fail("DESIGN_SESSION_CORRUPT","Сохранённая сессия проектирования повреждена.",500);}
+  const concept=Array.isArray(savedConcepts)?savedConcepts.find(x=>x.concept_id===conceptId):null;if(!concept||typeof concept.render_instructions!=="string")throw fail("INVALID_CONCEPT","Выбранная концепция отсутствует в сохранённой сессии.");
   await env.DB.prepare("DELETE FROM nexora_render_images WHERE expires_at <= ?").bind(new Date().toISOString()).run();
   await enforceRateLimit(env, request, requestId);
-  const adapter = makeAdapter(env, { bytes, contentType: mimeType, roomType });
+  const adapter = makeAdapter(env, { bytes, contentType: mimeType, roomType, width: imageWidth, height: imageHeight });
   const result = await adapter.render({
     request_id: requestId,
     source_image_ref: sourceImageRef,
-    source_image: { bytes, mime_type: mimeType },
+    source_image: { bytes, mime_type: mimeType, width: imageWidth, height: imageHeight },
     design_brief: { render_instructions: concept.render_instructions },
     safety_policy: {
       external_image_processing_consent: true,
@@ -245,13 +243,19 @@ async function handleRender(request, env) {
   return json({ ...result, concept_id: concept.concept_id, concept_name: concept.name, result_url: "/api/results/" + requestId });
 }
 
-async function handleConcepts(request) {
-  const raw = await request.json();
-  const input = validateDesignInput(raw);
-  const concepts = makeConcepts(input).map(({ render_instructions, ...publicFields }) => publicFields);
-  return json({ source_image_id: input.sourceImageId, source_image_immutable: true, concepts });
+async function handleConcepts(request,env){
+ const form=await request.formData();if(form.get("externalProcessingConsent")!=="true")throw fail("EXTERNAL_PROCESSING_CONSENT_REQUIRED","Для анализа и проектирования необходимо разрешить обработку фотографии в Cloudflare Workers AI.",403);
+ const file=form.get("image");if(!file||typeof file.arrayBuffer!=="function")throw fail("SOURCE_IMAGE_REQUIRED","Выберите исходную фотографию помещения.");if(file.size<=0||file.size>MAX_SOURCE_BYTES)throw fail("INVALID_IMAGE_SIZE","Фотография должна быть не больше 8 МБ.");
+ const bytes=new Uint8Array(await file.arrayBuffer()),mimeType=sniffImageMime(bytes);if(!mimeType||(file.type&&file.type!==mimeType))throw fail("UNSUPPORTED_IMAGE_TYPE","Поддерживаются корректные изображения JPEG, PNG и WebP.");
+ const sourceImageId="sha256:"+await sha256(bytes),input=validateDesignInput({sourceImageId,roomType:form.get("roomType"),stylePreference:form.get("stylePreference"),userBrief:form.get("userBrief"),intendedUse:form.get("intendedUse"),fixed:form.get("fixed"),preserve:form.get("preserve"),replaceable:form.get("replaceable")});
+ await env.DB.prepare("DELETE FROM nexora_design_sessions WHERE expires_at <= ?").bind(new Date().toISOString()).run();const dayStart=new Date();dayStart.setUTCHours(0,0,0,0);const count=await env.DB.prepare("SELECT COUNT(*) AS total FROM nexora_design_sessions WHERE created_at >= ?").bind(dayStart.toISOString()).first();if(Number(count?.total||0)>=MAX_DAILY_DESIGN_SESSIONS)throw fail("DAILY_DESIGN_LIMIT_REACHED","На сегодня исчерпан бесплатный лимит проектных сессий. Платные сервисы не подключаются.",429);
+ if(!env.AI||typeof env.AI.run!=="function")throw fail("WORKERS_AI_UNAVAILABLE","Cloudflare Workers AI не настроен.",503);
+ const session=await createDesignSession({visionAdapter:createMoondreamWorkersAIAdapter({AI:env.AI}),textAdapter:createWorkersAiDesignBrainAdapter({AI:env.AI}),sourceImage:{id:sourceImageId,bytes,contentType:mimeType},roomType:input.roomType,userBrief:input.userBrief,stylePreference:input.stylePreference,intendedUse:input.intendedUse,dimensions:input.dimensions,constraints:input.constraints});
+ if(session.status!=="design_concepts_ready"||!session.ai_design?.validation?.valid||session.ai_design.concepts.length!==3)throw fail("DESIGN_SESSION_REJECTED","AI-дизайнер не сформировал три проверенные концепции.",422);
+ const concepts=session.ai_design.concepts.map(x=>({concept_id:x.concept_id,name:x.name,thesis:x.design_thesis,layout:x.layout_strategy,material:x.material_palette.join("; "),lighting:x.lighting_strategy.join("; "),furniture:x.furniture_direction.join("; "),focal_point:x.focal_point,functional_rationale:x.functional_rationale,preserve:x.preserve,replace:x.replace,render_instructions:x.render_instructions}));
+ const sessionId=crypto.randomUUID(),createdAt=new Date().toISOString(),expiresAt=new Date(Date.now()+RESULT_TTL_HOURS*3600000).toISOString();await env.DB.prepare("INSERT INTO nexora_design_sessions (session_id, source_image_id, room_type, concepts_json, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)").bind(sessionId,sourceImageId,input.roomType,JSON.stringify(concepts),createdAt,expiresAt).run();
+ return json({session_id:sessionId,source_image_id:sourceImageId,source_image_immutable:true,concepts:concepts.map(({render_instructions,...fields})=>fields),vision_review_required:session.evidence.vision.review_required,constraint_review_required:session.evidence.constraint_ledger.requires_review,design_provider:session.ai_design.provider,design_model:session.ai_design.model_id,rendering_performed:false,expires_at:expiresAt});
 }
-
 async function handleJob(request, env, id, recover = false) {
   if (!/^[0-9a-f-]{36}$/i.test(id)) throw fail("INVALID_REQUEST_ID", "Идентификатор генерации недействителен.");
   if (recover) {
@@ -309,11 +313,14 @@ export default {
         return json({
           ok: true,
           app: "NEXORA Design Engine",
-          version: "1.2.1",
+          version: "1.4.0",
           provider: "huggingface-zero-gpu",
           model: MODEL,
           provider: PROVIDER_ID,
           model_id: MODEL_ID,
+          design_brain_model: DESIGN_BRAIN_MODEL_ID,
+          vision_model: "@cf/moondream/moondream3.1-9B-A2B",
+          design_session_limit: MAX_DAILY_DESIGN_SESSIONS,
           daily_render_limit: MAX_DAILY_RENDERS,
           paid_fallback_enabled: false,
           quality_gate: "moondream-room-identity",
@@ -322,7 +329,7 @@ export default {
           max_daily_renders_per_ip: MAX_DAILY_RENDERS
         });
       }
-      if (request.method === "POST" && path === "/api/concepts") return await handleConcepts(request);
+      if (request.method === "POST" && path === "/api/concepts") return await handleConcepts(request, env);
       if (request.method === "POST" && path === "/api/render") return await handleRender(request, env);
       const job = path.match(/^\/api\/jobs\/([0-9a-f-]{36})(\/recover)?$/i);
       if (job && request.method === "GET" && !job[2]) return await handleJob(request, env, job[1], false);
@@ -331,7 +338,7 @@ export default {
       if (result && ["GET", "DELETE"].includes(request.method)) return await handleResult(request, env, result[1]);
       return json({ error: "NOT_FOUND", message: "Страница не найдена." }, 404);
     } catch (error) {
-      const status = Number.isInteger(error.status) ? error.status : ["WORKERS_AI_FREE_QUOTA_EXHAUSTED", "GLOBAL_DAILY_LIMIT_REACHED", "DAILY_LIMIT_REACHED"].includes(error.code) ? 429 : error.code === "PROMPT_REJECTED" ? 422 : 500;
+      const status = Number.isInteger(error.status) ? error.status : ["WORKERS_AI_FREE_QUOTA_EXHAUSTED", "GLOBAL_DAILY_LIMIT_REACHED", "DAILY_LIMIT_REACHED", "DAILY_DESIGN_LIMIT_REACHED"].includes(error.code) ? 429 : error.code === "PROMPT_REJECTED" ? 422 : 500;
       const code = error.code || "INTERNAL_ERROR";
       if (status >= 500) console.error("NEXORA_ENGINE_ERROR", code);
       const payload = {

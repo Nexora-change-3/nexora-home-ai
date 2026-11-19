@@ -45,7 +45,7 @@ button{border:0;border-radius:10px;background:var(--accent);color:white;font:600
 </div>
 <div class="panel" id="conceptPanel" hidden>
 <div class="step">02 / Выбор направления</div><h2>Три разные идеи</h2><div id="concepts" class="concepts"></div>
-<div class="consent"><input type="checkbox" id="consent"><label for="consent" style="margin:0;font-weight:500">Я разрешаю обработать выбранную фотографию в Cloudflare Workers AI (FLUX.2 Klein 9B) для генерации и в Moondream для проверки сохранения типа помещения. Исходное фото не сохраняется на сервере NEXORA. При исчерпании бесплатной дневной квоты генерация остановится; платные сервисы не подключаются.</label></div>
+<div class="consent"><input type="checkbox" id="consent">\1Я разрешаю передать выбранную фотографию в Cloudflare Workers AI для анализа помещения (Moondream), разработки трёх концепций (Llama 3.3 70B) и генерации изображений (FLUX.2 Dev). Исходное фото остаётся локальным; на сервере хранятся только концепции и временные результаты. При исчерпании бесплатной квоты генерация остановится, платные сервисы не подключаются.\2</div>
 <button id="render" class="full" disabled>Создать выбранные варианты</button>
 <div id="renderStatus" class="statusline" aria-live="polite"></div><div class="progress" id="progress"><i id="progressBar"></i></div>
 <p class="notice">Варианты создаются последовательно. Общий лимит — 3 генерации в сутки на весь проект, чтобы использовать только бесплатную дневную квоту Cloudflare Workers AI. Платный резервный сервис отключён.</p>
@@ -57,12 +57,15 @@ button{border:0;border-radius:10px;background:var(--accent);color:white;font:600
 <p class="notice">Исходное фото не сохраняется на сервере NEXORA. При запуске генерации оно передаётся выбранному внешнему сервису. Готовые изображения временно хранятся в NEXORA до 24 часов для восстановления, а затем остаются в локальной базе браузера.</p><button id="clear" class="danger full">Удалить локальные фотографии и результаты</button><div id="clearStatus" class="statusline"></div></div>
 </aside>
 </div>
-<div class="footer">NEXORA Design Engine 1.2.1 · FLUX.2 Klein 9B через Cloudflare Workers AI · Moondream room-identity quality gate. Результат требует проверки архитектором: модель может ошибаться в геометрии, деталях и функциональности. Не используйте изображение как строительный чертёж.</div>
+<div class="footer">NEXORA Design Engine 1.4 · FLUX.2 Dev через Cloudflare Workers AI · Moondream room-identity quality gate. Результат требует проверки архитектором: модель может ошибаться в геометрии, деталях и функциональности. Не используйте изображение как строительный чертёж.</div>
 </main>
 <script>
 const $ = (id) => document.getElementById(id);
 const DB_NAME = "nexora-design-engine-local";
 let sourceBlob = null;
+let currentDesignSessionId = null;
+let currentSourceImageId = null;
+let isPlanning = false;
 let sourceName = "room-photo";
 let currentConcepts = [];
 let isRendering = false;
@@ -150,10 +153,11 @@ async function sha256(blob) {
 function setPhoto(blob, name) {
   sourceBlob = blob;
   sourceName = name || "room-photo";
+  invalidateDesignSession();
   const image = $("preview");
   image.src = URL.createObjectURL(blob);
   image.style.display = "block";
-  $("plan").disabled = false;
+  updatePlanButton();
   $("conceptPanel").hidden = true;
   setStatus("planStatus", "Фото сохранено локально. Оно ещё не отправлялось на сервер.");
 }
@@ -187,34 +191,12 @@ function selectedConcepts() {
   const ids = [...$("concepts").querySelectorAll("input[type=checkbox]:checked")].map((x) => x.dataset.conceptId);
   return currentConcepts.filter((x) => ids.includes(x.concept_id));
 }
+function updatePlanButton() { $("plan").disabled = !sourceBlob || !$("consent").checked || isPlanning; }
+function invalidateDesignSession() { currentDesignSessionId=null; currentSourceImageId=null; currentConcepts=[]; $("conceptPanel").hidden=true; updateRenderButton(); }
 function updateRenderButton() {
-  $("render").disabled = !sourceBlob || !selectedConcepts().length || !$("consent").checked || isRendering;
+  $("render").disabled = !sourceBlob || !currentDesignSessionId || !selectedConcepts().length || !$("consent").checked || isRendering;
 }
-async function planConcepts() {
-  if (!sourceBlob) return;
-  $("plan").disabled = true;
-  setStatus("planStatus", "Анализирую бриф и собираю три разные концепции…");
-  try {
-    const sourceId = "sha256:" + await sha256(sourceBlob);
-    const response = await fetch("/api/concepts", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(designInput(sourceId))
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.message || "Не удалось сформировать концепции.");
-    currentConcepts = data.concepts;
-    $("concepts").replaceChildren(...currentConcepts.map(conceptCard));
-    $("conceptPanel").hidden = false;
-    setStatus("planStatus", "Готово: сформированы три самостоятельных направления.");
-    setStatus("renderStatus", "Выберите варианты и подтвердите внешнюю обработку фотографии.");
-    updateRenderButton();
-  } catch (error) {
-    setStatus("planStatus", error.message, true);
-  } finally {
-    $("plan").disabled = false;
-  }
-}
+async function planConcepts(){if(!sourceBlob||!$("consent").checked||isPlanning)return;isPlanning=true;updatePlanButton();invalidateDesignSession();setStatus("planStatus","Анализирую исходную фотографию и разрабатываю три разные дизайнерские концепции…");try{const sourceId="sha256:"+await sha256(sourceBlob),input=designInput(sourceId),form=new FormData();form.append("image",sourceBlob,sourceName||"nexora-source");form.append("externalProcessingConsent","true");for(const key of ["roomType","stylePreference","userBrief","intendedUse","fixed","preserve","replaceable"]){const value=input[key];form.append(key,Array.isArray(value)?value.join("\n"):String(value??""));}const response=await fetch("/api/concepts",{method:"POST",body:form}),data=await response.json();if(!response.ok)throw new Error(data.message||"Не удалось сформировать концепции.");currentDesignSessionId=data.session_id;currentSourceImageId=sourceId;currentConcepts=data.concepts;$("concepts").replaceChildren(...currentConcepts.map(conceptCard));$("conceptPanel").hidden=false;const review=data.vision_review_required||data.constraint_review_required?" Требуется ручная проверка неоднозначных элементов помещения.":"";setStatus("planStatus","AI-дизайнер проанализировал фотографию и подготовил три самостоятельные концепции."+review);setStatus("renderStatus","Выберите концепции для визуализации. Исходная фотография останется неизменной.");updateRenderButton();}catch(error){invalidateDesignSession();setStatus("planStatus",error.message,true);}finally{isPlanning=false;updatePlanButton();}}
 async function fetchAndSaveResult(job, result) {
   const response = await fetch(result.result_url || ("/api/results/" + job.id));
   if (!response.ok) {
@@ -227,7 +209,7 @@ async function fetchAndSaveResult(job, result) {
     blob,
     conceptName: result.concept_name || job.conceptName,
     createdAt: new Date().toISOString(),
-    model: result.model_id || "FLUX.2 Klein 9B",
+    model: result.model_id || "FLUX.2 Dev",
     recovered: Boolean(result.recovered)
   });
   await dbPut("jobs", { ...job, state: "succeeded" });
@@ -239,7 +221,7 @@ async function prepareRenderBlob(blob) {
   try {
     const image = new Image();
     await new Promise((resolve, reject) => { image.onload = resolve; image.onerror = reject; image.src = objectUrl; });
-    let maxDim = 1024;
+    let maxDim = 512;
     let quality = 0.86;
     for (let attempt = 0; attempt < 3; attempt++) {
       const scale = Math.min(1, maxDim / Math.max(image.naturalWidth, image.naturalHeight));
@@ -249,19 +231,21 @@ async function prepareRenderBlob(blob) {
       const context = canvas.getContext("2d", { alpha: false });
       context.drawImage(image, 0, 0, canvas.width, canvas.height);
       const output = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
-      if (output && output.size <= 1500000) return output;
+      if (output && output.size <= 1500000) return { blob: output, width: canvas.width, height: canvas.height };
       maxDim = Math.round(maxDim * 0.85);
       quality = Math.max(0.72, quality - 0.06);
     }
     throw new Error("Не удалось подготовить фотографию для безопасной отправки.");
   } finally { URL.revokeObjectURL(objectUrl); }
 }
-async function renderOne(concept, index, total, renderBlob) {
+async function renderOne(concept, index, total, renderInput) {
   const id = crypto.randomUUID();
   const job = { id, conceptId: concept.concept_id, conceptName: concept.name, state: "submitting", createdAt: new Date().toISOString() };
   await dbPut("jobs", job);
   const form = new FormData();
-  form.append("image", renderBlob, "nexora-source.jpg");
+  form.append("image", renderInput.blob, "nexora-source.jpg");
+  form.append("imageWidth", String(renderInput.width));
+  form.append("imageHeight", String(renderInput.height));
   form.append("requestId", id);
   form.append("externalProcessingConsent", "true");
   form.append("roomType", $("room").value);
@@ -272,6 +256,8 @@ async function renderOne(concept, index, total, renderBlob) {
   form.append("preserve", lines("preserve"));
   form.append("replaceable", lines("replace"));
   form.append("conceptId", concept.concept_id);
+  form.append("designSessionId", currentDesignSessionId || "");
+  form.append("sourceImageId", currentSourceImageId || "");
   const response = await fetch("/api/render", { method: "POST", body: form });
   const data = await response.json();
   if (!response.ok) {
@@ -288,7 +274,7 @@ async function renderOne(concept, index, total, renderBlob) {
 }
 async function renderSelected() {
   const chosen = selectedConcepts();
-  if (!sourceBlob || !chosen.length || !$("consent").checked || isRendering) return;
+  if (!sourceBlob || !currentDesignSessionId || !chosen.length || !$("consent").checked || isRendering) return;
   isRendering = true;
   updateRenderButton();
   $("progress").style.display = "block";
@@ -296,10 +282,10 @@ async function renderSelected() {
   let completed = 0;
   try {
     setStatus("renderStatus", "Подготавливаю уменьшенную копию фотографии. Исходник останется без изменений…");
-    const renderBlob = await prepareRenderBlob(sourceBlob);
+    const renderInput = await prepareRenderBlob(sourceBlob);
     for (const concept of chosen) {
       setStatus("renderStatus", "Генерация " + (completed + 1) + " из " + chosen.length + ": " + concept.name + "…");
-      await renderOne(concept, completed + 1, chosen.length, renderBlob);
+      await renderOne(concept, completed + 1, chosen.length, renderInput);
       completed++;
       $("progressBar").style.width = Math.round(completed / chosen.length * 100) + "%";
     }
@@ -371,7 +357,7 @@ async function clearLocal() {
   await dbClear("source");
   await dbClear("results");
   await dbClear("jobs");
-  sourceBlob = null;
+  sourceBlob = null; currentDesignSessionId=null; currentSourceImageId=null; currentConcepts=[];
   $("preview").removeAttribute("src");
   $("preview").style.display = "none";
   $("photo").value = "";
@@ -396,14 +382,15 @@ $("photo").addEventListener("change", async (event) => {
   setPhoto(file, file.name);
 });
 $("plan").addEventListener("click", planConcepts);
-$("consent").addEventListener("change", updateRenderButton);
+$("consent").addEventListener("change", () => { updatePlanButton(); updateRenderButton(); });
+for (const id of ["room","style","brief","use","fixed","preserve","replace"]) { $(id).addEventListener("input",invalidateDesignSession); $(id).addEventListener("change",invalidateDesignSession); }
 $("render").addEventListener("click", renderSelected);
 $("clear").addEventListener("click", clearLocal);
 (async function init() {
   try {
     const health = await fetch("/api/health").then((r) => r.json());
     if (!health.ok || health.provider !== "cloudflare-workers-ai") throw new Error("Native Workers AI provider is unavailable.");
-    $("providerStatus").textContent = "Cloudflare Workers AI · FLUX.2 Klein 9B. До 3 генераций в сутки на весь проект; платные резервные сервисы отключены. Moondream проверяет сохранение типа помещения.";
+    $("providerStatus").textContent = "Cloudflare Workers AI · Llama 3.3 70B Design Brain · FLUX.2 Dev · Moondream Vision/Quality Gate. До 3 проектных сессий и 3 генераций в сутки; платные резервные сервисы отключены.";
     const saved = await dbGet("source", "active");
     if (saved?.blob) setPhoto(saved.blob, saved.name);
     await renderSavedResults();
@@ -412,7 +399,7 @@ $("clear").addEventListener("click", clearLocal);
   } catch (error) {
     setStatus("planStatus", "Локальное хранилище недоступно в этом браузере.", true);
   }
-  $("plan").disabled = !sourceBlob;
+  updatePlanButton();
   updateRenderButton();
 })();
 </script>

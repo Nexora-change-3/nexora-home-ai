@@ -14,6 +14,7 @@ const visionResult = {
 };
 const concepts = ["a","b","c"].map((id, i) => ({
   concept_id: id,
+  name: ["Architectural", "Warm crafted", "Expressive atelier"][i],
   design_thesis: ["Architectural stone-led composition","Warm timber and tactile family kitchen","Expressive dark metal atelier kitchen"][i],
   layout_strategy: ["Linear work zone","Social preparation zone","Modular contrast zone"][i],
   material_palette: [["limestone"],["oak and ceramic"],["steel and lacquer"]][i],

@@ -14,6 +14,7 @@ const input = {
 function concept(id, thesis, layout, material, focal) {
   return {
     concept_id: id,
+    name: thesis.slice(0, 52),
     design_thesis: thesis,
     layout_strategy: layout,
     material_palette: [material],
