@@ -28,6 +28,7 @@ test("joins the Gradio sse_v3 queue with the pinned fn_index and session hash", 
   });
   const result = await transport.submit({
     imageBytes: new Uint8Array([65, 66, 67]),
+    mimeType: "image/jpeg",
     prompt: "A clear interior design prompt",
     seed: 7
   });
@@ -39,7 +40,7 @@ test("joins the Gradio sse_v3 queue with the pinned fn_index and session hash", 
   const payload = JSON.parse(calls[0].init.body);
   assert.equal(payload.fn_index, DEFAULT_INFER_FN_INDEX);
   assert.equal(payload.session_hash, SESSION);
-  assert.deepEqual(JSON.parse(payload.data[0]), ["QUJD"]);
+  assert.deepEqual(JSON.parse(payload.data[0]), ["data:image/jpeg;base64,QUJD"]);
   assert.equal(payload.data[1], "A clear interior design prompt");
   assert.equal(payload.data[2], 7);
   assert.equal(payload.data[3], false);

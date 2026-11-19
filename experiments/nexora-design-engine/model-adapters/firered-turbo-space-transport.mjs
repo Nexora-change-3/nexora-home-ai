@@ -13,14 +13,14 @@ function assert(condition, code, message) {
   if (!condition) throw fail(code, message);
 }
 
-function toBase64(input) {
+function toDataUrl(input, mimeType) {
   const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
   let binary = "";
   const chunkSize = 0x8000;
   for (let offset = 0; offset < bytes.length; offset += chunkSize) {
     binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
   }
-  return btoa(binary);
+  return `data:${mimeType};base64,${btoa(binary)}`;
 }
 
 function resolveHandle(input) {
@@ -140,9 +140,10 @@ export function createFireRedTurboSpaceTransport({
   assert(typeof cryptoImpl?.randomUUID === "function", "CRYPTO_UNAVAILABLE", "Secure session IDs are required.");
   const origin = parsed.origin;
 
-  async function submit({ imageBytes, prompt, seed = 42, randomizeSeed = false, steps = 3, mode = "fast", gpuDuration = 120, signal } = {}) {
+  async function submit({ imageBytes, mimeType = "image/jpeg", prompt, seed = 42, randomizeSeed = false, steps = 3, mode = "fast", gpuDuration = 120, signal } = {}) {
     const bytes = imageBytes instanceof Uint8Array ? imageBytes : new Uint8Array(imageBytes || []);
     assert(bytes.byteLength > 0, "SOURCE_IMAGE_UNAVAILABLE", "Source image bytes are required.");
+    assert(["image/jpeg", "image/png", "image/webp"].includes(mimeType), "UNSUPPORTED_IMAGE_TYPE", "Source image MIME type is unsupported.");
     assert(typeof prompt === "string" && prompt.trim() && prompt.length <= 12000,
       "INVALID_PROMPT", "A non-empty prompt of at most 12000 characters is required.");
     assert(Number.isInteger(seed) && seed >= 0 && seed <= 2147483647, "INVALID_SEED", "Seed is invalid.");
@@ -151,7 +152,7 @@ export function createFireRedTurboSpaceTransport({
 
     const sessionHash = cryptoImpl.randomUUID();
     const payload = {
-      data: [JSON.stringify([toBase64(bytes)]), prompt, seed, randomizeSeed, steps, mode, gpuDuration],
+      data: [JSON.stringify([toDataUrl(bytes, mimeType)]), prompt, seed, randomizeSeed, steps, mode, gpuDuration],
       fn_index: DEFAULT_INFER_FN_INDEX,
       session_hash: sessionHash
     };
