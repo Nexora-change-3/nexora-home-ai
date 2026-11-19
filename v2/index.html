@@ -45,6 +45,7 @@ main{width:min(100% - 28px,980px);margin:0 auto;padding:24px 0 60px}.top{display
   <p class="muted">Концепции отличаются композиционным решением, мебелью, материалами и фокусными элементами, оставаясь в выбранном стиле.</p>
   <button id="generateBtn" type="button" disabled>Создать 3 варианта</button>
   <div class="status" id="generateStatus" aria-live="polite"></div>
+  <div class="analysis hidden" id="baselineSection"><strong>Старая версия — контрольные результаты для сравнения</strong><div class="results" id="baselineResults"></div></div>
   <div class="results" id="results"></div>
 </section>
 <div class="foot">Изображения и результаты сохраняются в текущей сессии браузера. V2 работает отдельно от прежней версии.</div>
@@ -65,7 +66,7 @@ const styles=[
 {name:"Luxury",file:"luxury.webp",title:"Luxury"}
 ];
 const $=id=>document.getElementById(id);
-let selectedStyle="Japandi",roomFile=null,userReference=null,analysisData=null,analysisConfirmed=false,roomDimensions={width:1024,height:768},roomUrl=null,referenceUrl=null;
+let selectedStyle="Japandi",roomFile=null,userReference=null,analysisData=null,analysisConfirmed=false,roomDimensions={width:1024,height:768},roomUrl=null,referenceUrl=null,baselineResults=[];
 const styleGrid=$("styleGrid");
 styles.forEach(s=>{
  const b=document.createElement("button");b.type="button";b.className="style";b.dataset.style=s.name;b.setAttribute("aria-pressed",String(s.name===selectedStyle));
@@ -76,7 +77,7 @@ styles.forEach(s=>{
 });
 function preview(file,img,oldUrl){if(oldUrl)URL.revokeObjectURL(oldUrl);if(!file){img.removeAttribute("src");img.classList.remove("show");return null}const url=URL.createObjectURL(file);img.src=url;img.classList.add("show");return url}
 function resizeBlob(file,maxSide){return new Promise((resolve,reject)=>{const image=new Image(),url=URL.createObjectURL(file);image.onload=()=>{const scale=Math.min(1,maxSide/Math.max(image.naturalWidth,image.naturalHeight));const w=Math.max(1,Math.round(image.naturalWidth*scale)),h=Math.max(1,Math.round(image.naturalHeight*scale));const canvas=document.createElement("canvas");canvas.width=w;canvas.height=h;canvas.getContext("2d").drawImage(image,0,0,w,h);canvas.toBlob(blob=>{URL.revokeObjectURL(url);if(blob)resolve(blob);else reject(new Error("Не удалось подготовить изображение."))},"image/jpeg",.88)};image.onerror=()=>{URL.revokeObjectURL(url);reject(new Error("Не удалось прочитать изображение."))};image.src=url})}
-function setRoom(file){roomFile=file;roomUrl=preview(file,$("roomPreview"),roomUrl);analysisData=null;analysisConfirmed=false;$("analysisCard").classList.add("hidden");$("confirmBtn").classList.add("hidden");$("generateBtn").disabled=true}
+function setRoom(file){roomFile=file;baselineResults=[];$("baselineSection").classList.add("hidden");$("baselineResults").innerHTML="";roomUrl=preview(file,$("roomPreview"),roomUrl);analysisData=null;analysisConfirmed=false;$("analysisCard").classList.add("hidden");$("confirmBtn").classList.add("hidden");$("generateBtn").disabled=true}
 $("roomFile").addEventListener("change",e=>setRoom(e.target.files&&e.target.files[0]||null));
 $("userReference").addEventListener("change",e=>{userReference=e.target.files&&e.target.files[0]||null;referenceUrl=preview(userReference,$("referencePreview"),referenceUrl)});
 $("backupFile").addEventListener("change",async e=>{
@@ -88,7 +89,7 @@ $("backupFile").addEventListener("change",async e=>{
   const roomBlob=decode(latest.roomBlob);setRoom(new File([roomBlob],"nexora-saved-room.jpg",{type:roomBlob.type||"image/jpeg"}));
   if(latest.referenceBlob&&latest.referenceBlob.data){const refBlob=decode(latest.referenceBlob);userReference=new File([refBlob],"nexora-saved-reference.jpg",{type:refBlob.type||"image/jpeg"});referenceUrl=preview(userReference,$("referencePreview"),referenceUrl)}
   if(latest.style&&styles.some(x=>x.name===latest.style)){selectedStyle=latest.style;styleGrid.querySelectorAll(".style").forEach(x=>x.setAttribute("aria-pressed",String(x.dataset.style===selectedStyle)))}
-  status.textContent="Фото восстановлено из резервной копии. Выберите тип помещения и запустите анализ.";
+  const oldResults=(backup.studioResults||[]).filter(x=>x.sessionId===latest.id&&x.blob).sort((a,b)=>(a.variant||0)-(b.variant||0));baselineResults=oldResults.map(x=>({variant:x.variant||0,style:x.style||latest.style||"",blob:decode({data:x.blob,mime:x.mime||"image/png"})}));renderBaseline();status.textContent="Фото восстановлено из резервной копии. Найдено старых вариантов: "+baselineResults.length+". Выберите тип помещения и запустите анализ.";
  }catch(error){status.textContent="Не удалось импортировать копию: "+error.message}
 });
 $("analyzeBtn").addEventListener("click",async()=>{
@@ -116,6 +117,7 @@ $("analyzeBtn").addEventListener("click",async()=>{
 });
 $("roomType").addEventListener("change",()=>{analysisData=null;analysisConfirmed=false;$("analysisCard").classList.add("hidden");$("confirmBtn").classList.add("hidden");$("generateBtn").disabled=true;$("analyzeStatus").textContent="Тип помещения изменён. Выполните анализ заново."});
 $("confirmBtn").addEventListener("click",()=>{analysisConfirmed=true;$("generateBtn").disabled=false;$("confirmBtn").classList.add("hidden");$("analyzeStatus").textContent="Вы подтвердили выбранный тип помещения. Можно создавать концепции."});
+function renderBaseline(){const box=$("baselineResults");box.innerHTML="";if(!baselineResults.length){$("baselineSection").classList.add("hidden");return}$("baselineSection").classList.remove("hidden");baselineResults.forEach(item=>{const url=URL.createObjectURL(item.blob);const card=document.createElement("article");card.className="result";const img=document.createElement("img");img.src=url;img.alt="Старая версия, вариант "+item.variant;const title=document.createElement("strong");title.textContent="V1 · вариант "+item.variant+(item.style?" · "+item.style:"");const link=document.createElement("a");link.href=url;link.download="NEXORA-V1-variant-"+item.variant+".png";link.textContent="Скачать старый вариант";card.append(img,title,link);box.appendChild(card)})}
 function escapeHtml(value){return String(value).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 async function loadProfile(){const response=await fetch("/style-profiles.json",{cache:"no-store"});if(!response.ok)throw new Error("Не удалось загрузить библиотеку стилевых профилей.");const data=await response.json();return data.profiles&&data.profiles[selectedStyle]||{}}
 function bytesToBlob(base64,type){const binary=atob(base64);const bytes=new Uint8Array(binary.length);for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);return new Blob([bytes],{type:type||"image/png"})}
@@ -146,4 +148,6 @@ setRoom=function(file){nativeSetRoom(file);updateDimensions(file)};
 </script>
 </body>
 </html>
+
+
 
