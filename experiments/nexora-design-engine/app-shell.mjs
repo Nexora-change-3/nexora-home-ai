@@ -33,7 +33,7 @@ button{border:0;border-radius:10px;background:var(--accent);color:white;font:600
 <section>
 <div class="panel">
 <div class="step">01 / Исходное пространство</div><h2>Фотография помещения</h2>
-<div class="upload"><label for="photo" style="margin:0">Выберите исходную фотографию</label><input id="photo" type="file" accept="image/jpeg,image/png,image/webp"><div class="hint">JPEG, PNG или WebP · до 8 МБ · фотография хранится в этом браузере</div><img id="preview" class="preview" alt="Предпросмотр исходной фотографии"></div>
+<div class="upload"><label for="photo" style="margin:0">Выберите исходную фотографию</label><input id="photo" type="file" accept="image/jpeg,image/png,image/webp"><div class="hint">JPEG, PNG или WebP · до 8 МБ · исходник хранится в браузере; для модели создаётся уменьшенная копия</div><img id="preview" class="preview" alt="Предпросмотр исходной фотографии"></div>
 <div class="grid2"><div><label for="room">Тип помещения</label><select id="room"><option value="kitchen">Кухня</option><option value="living_room">Гостиная</option><option value="bedroom">Спальня</option><option value="bathroom">Ванная</option><option value="hallway">Прихожая</option><option value="office">Кабинет</option><option value="studio">Студия</option><option value="other">Другое</option></select></div><div><label for="style">Стилевой ориентир</label><select id="style"><option value="designer-led">Пусть дизайнер предложит решение</option><option value="contemporary">Современный</option><option value="minimalism">Минимализм</option><option value="japandi">Japandi</option><option value="scandinavian">Скандинавский</option><option value="classic">Современная классика</option><option value="organic">Органический / природный</option><option value="art-deco">Ар-деко</option><option value="industrial">Индустриальный</option></select></div></div>
 <label for="brief">Что вы хотите изменить?</label><textarea id="brief" placeholder="Например: полностью новое оформление кухни, больше цельных материалов, выразительный остров, спокойная палитра..."></textarea>
 <label for="use">Как будет использоваться помещение?</label><input id="use" placeholder="Например: ежедневная готовка, семейные ужины, работа из дома">
@@ -233,12 +233,34 @@ async function fetchAndSaveResult(job, result) {
   await dbDelete("jobs", job.id);
   await renderSavedResults();
 }
-async function renderOne(concept, index, total) {
+async function prepareRenderBlob(blob) {
+  const objectUrl = URL.createObjectURL(blob);
+  try {
+    const image = new Image();
+    await new Promise((resolve, reject) => { image.onload = resolve; image.onerror = reject; image.src = objectUrl; });
+    let maxDim = 1024;
+    let quality = 0.86;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const scale = Math.min(1, maxDim / Math.max(image.naturalWidth, image.naturalHeight));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+      const context = canvas.getContext("2d", { alpha: false });
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      const output = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+      if (output && output.size <= 1500000) return output;
+      maxDim = Math.round(maxDim * 0.85);
+      quality = Math.max(0.72, quality - 0.06);
+    }
+    throw new Error("Не удалось подготовить фотографию для безопасной отправки.");
+  } finally { URL.revokeObjectURL(objectUrl); }
+}
+async function renderOne(concept, index, total, renderBlob) {
   const id = crypto.randomUUID();
   const job = { id, conceptId: concept.concept_id, conceptName: concept.name, state: "submitting", createdAt: new Date().toISOString() };
   await dbPut("jobs", job);
   const form = new FormData();
-  form.append("image", sourceBlob, sourceName);
+  form.append("image", renderBlob, "nexora-source.jpg");
   form.append("requestId", id);
   form.append("externalProcessingConsent", "true");
   form.append("roomType", $("room").value);
@@ -267,9 +289,11 @@ async function renderSelected() {
   $("progressBar").style.width = "0%";
   let completed = 0;
   try {
+    setStatus("renderStatus", "Подготавливаю уменьшенную копию фотографии. Исходник останется без изменений…");
+    const renderBlob = await prepareRenderBlob(sourceBlob);
     for (const concept of chosen) {
       setStatus("renderStatus", "Генерация " + (completed + 1) + " из " + chosen.length + ": " + concept.name + "…");
-      await renderOne(concept, completed + 1, chosen.length);
+      await renderOne(concept, completed + 1, chosen.length, renderBlob);
       completed++;
       $("progressBar").style.width = Math.round(completed / chosen.length * 100) + "%";
     }

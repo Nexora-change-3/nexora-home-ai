@@ -4,7 +4,7 @@ import { createFireRedTurboSpaceAdapter } from "../model-adapters/firered-turbo-
 import { createMemoryDispatchStore } from "../model-adapters/dispatch-ledger.mjs";
 
 const PNG = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3]);
-const HANDLE = { event_id: "event_12345678", session_hash: "123e4567-e89b-12d3-a456-426614174000" };
+const HANDLE = { event_id: "event_12345678" };
 
 function makeRequest(overrides = {}) {
   return {

@@ -75,7 +75,7 @@ function parseEventHandle(serialized) {
   let handle;
   try { handle = JSON.parse(serialized); }
   catch { throw fail("DISPATCH_NOT_RECOVERABLE", "Saved FireRed event handle is malformed."); }
-  assert(handle && typeof handle.event_id === "string" && typeof handle.session_hash === "string",
+  assert(handle && typeof handle.event_id === "string",
     "DISPATCH_NOT_RECOVERABLE", "Saved FireRed event handle is incomplete.");
   return handle;
 }
@@ -194,7 +194,7 @@ export function createFireRedTurboSpaceAdapter({
         gpuDuration: 120,
         signal: deadline.signal
       });
-      assert(submission && typeof submission.event_id === "string" && typeof submission.session_hash === "string",
+      assert(submission && typeof submission.event_id === "string",
         "QUEUE_OUTCOME_UNKNOWN", "FireRed returned no valid event handle.");
       await dispatchStore.markQueued(requestId, JSON.stringify(submission));
     } catch {
