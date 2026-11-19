@@ -39,6 +39,7 @@ test("pins FireRed adapter to the reviewed workflow revision", async () => {
 
 test("runs the full FireRed dataflow through the HTTP transport boundary with one immutable source upload", async () => {
   const calls = [];
+  const queueAttempts = new Map();
   let stored;
   const originalBytes = new Uint8Array(png);
   const originalRequest = {
@@ -66,7 +67,8 @@ test("runs the full FireRed dataflow through the HTTP transport boundary with on
     if (parsed.pathname === "/prompt") {
       const body = JSON.parse(init.body);
       const graph = body.prompt;
-      assert.equal(body.client_id, originalRequest.request_id);
+      queueAttempts.set(body.client_id, (queueAttempts.get(body.client_id) || 0) + 1);
+      assert.equal(typeof body.client_id, "string");
       assert.equal(graph["143"].inputs.image, "nexora/session-001/nexora-original-upload.png");
       assert.equal(graph["167:118"].inputs.prompt, originalRequest.design_brief.render_instructions);
       assert.equal(graph["167:117"].inputs.prompt, "", "the reviewed negative prompt remains unchanged");
@@ -76,6 +78,9 @@ test("runs the full FireRed dataflow through the HTTP transport boundary with on
       assert.deepEqual(graph["167:125"].inputs.pixels, ["167:147", 0]);
       assert.deepEqual(graph["9"].inputs.images, ["167:126", 0]);
       assert.equal(graph["167:130"].inputs.seed, 43);
+      if (body.client_id === "nexora-firered-e2e-ambiguous") {
+        throw new TypeError("Simulated connection loss after ComfyUI accepted the job");
+      }
       return Response.json({ prompt_id: "firered-e2e-job-001" });
     }
     if (parsed.pathname === "/history/firered-e2e-job-001") {
@@ -126,5 +131,12 @@ test("runs the full FireRed dataflow through the HTTP transport boundary with on
   assert.deepEqual([...originalRequest.source_image.bytes], [...png], "original photo bytes remain untouched");
   assert.equal(calls.filter((call) => call.path === "/upload/image").length, 1, "exactly one original image is uploaded");
   assert.equal(calls.filter((call) => call.path === "/prompt").length, 1, "the render is queued exactly once");
+
+  const ambiguousRequest = { ...originalRequest, request_id: "nexora-firered-e2e-ambiguous" };
+  await assert.rejects(() => adapter.render(ambiguousRequest), { code: "QUEUE_OUTCOME_UNKNOWN" });
+  await assert.rejects(() => adapter.render(ambiguousRequest), { code: "DUPLICATE_SUBMISSION_BLOCKED" });
+  assert.equal(queueAttempts.get(ambiguousRequest.request_id), 1, "an ambiguous submission is never blindly queued twice");
+  assert.equal(calls.filter((call) => call.path === "/prompt").length, 2, "only the original and one ambiguous submission reached the queue");
+  assert.equal(calls.filter((call) => call.path === "/upload/image").length, 2, "the retry is blocked before a second source upload");
   assert.equal(workflow["143"].inputs.image, "nexora-source-placeholder.png", "the pinned graph template is not mutated");
 });

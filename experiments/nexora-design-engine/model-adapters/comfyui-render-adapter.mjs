@@ -123,12 +123,19 @@ export function createComfyUiRenderAdapter({
   const pinnedWorkflow = clone(workflow);
   const inFlight = new Map();
   const completed = new Map();
+  // Once queue submission begins, a transport failure is ambiguous: ComfyUI may
+  // have accepted the job even if its response never reached NEXORA.
+  const submissions = new Map();
 
   async function render(request) {
     validateRequest(request, maxImageBytes);
     const requestId = request.request_id;
     if (completed.has(requestId)) return completed.get(requestId);
     assert(!inFlight.has(requestId), "DUPLICATE_REQUEST_IN_PROGRESS", "A render with this request_id is already running.");
+    const priorSubmission = submissions.get(requestId);
+    assert(!priorSubmission, "DUPLICATE_SUBMISSION_BLOCKED", priorSubmission?.state === "outcome_unknown"
+      ? "A previous queue submission has an unknown outcome. Reconcile the existing ComfyUI job before retrying."
+      : "This request_id has already been submitted to ComfyUI and cannot be queued again.");
     const operation = runRender(request);
     inFlight.set(requestId, operation);
     try {
@@ -168,9 +175,17 @@ export function createComfyUiRenderAdapter({
       if (nodeInputs.seed && request.seed !== undefined && request.seed !== null) applyNodeInput(apiWorkflow, nodeInputs.seed, request.seed, false);
       checkActive();
 
-      const queued = await context.run((signal) => transport.queuePrompt({ workflow: apiWorkflow, clientId: request.request_id, signal }));
-      assert(queued && typeof queued.prompt_id === "string" && queued.prompt_id, "QUEUE_FAILED", "ComfyUI did not acknowledge the render job.");
+      submissions.set(request.request_id, { state: "submitting", started_at: now() });
+      let queued;
+      try {
+        queued = await context.run((signal) => transport.queuePrompt({ workflow: apiWorkflow, clientId: request.request_id, signal }));
+      } catch {
+        submissions.set(request.request_id, { state: "outcome_unknown", started_at: now() });
+        throw fail("QUEUE_OUTCOME_UNKNOWN", "The queue response was not confirmed. The request is blocked from resubmission to prevent duplicate generation.");
+      }
+      assert(queued && typeof queued.prompt_id === "string" && queued.prompt_id, "QUEUE_OUTCOME_UNKNOWN", "ComfyUI returned no usable prompt_id. The request is blocked from resubmission.");
       activePromptId = queued.prompt_id;
+      submissions.set(request.request_id, { state: "queued", prompt_id: queued.prompt_id, started_at: now() });
       if (context.signal.aborted) {
         await transport.cancelPrompt?.(activePromptId);
         throw context.signal.reason || fail("CANCELLED", "Render was cancelled.");
