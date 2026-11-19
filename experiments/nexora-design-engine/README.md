@@ -80,3 +80,8 @@ node --test experiments/nexora-design-engine/tests/*.test.mjs
 ## Принцип разработки
 
 Сначала система должна научиться понимать пространство и проектировать, затем — управлять генерацией, затем — проверять результат. Генеративная модель является сменным рендер-движком, а не носителем всей логики NEXORA.
+
+
+## Release 1.2 runtime
+
+The active renderer is Cloudflare Workers AI FLUX.2 Klein 9B, with Moondream room-identity QA. The app is capped at three generations per UTC day across the entire project; paid fallbacks are disabled. See `docs/FLUX-2-KLEIN-9B-RUNTIME.md`.

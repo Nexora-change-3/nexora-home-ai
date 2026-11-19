@@ -45,21 +45,19 @@ button{border:0;border-radius:10px;background:var(--accent);color:white;font:600
 </div>
 <div class="panel" id="conceptPanel" hidden>
 <div class="step">02 / Выбор направления</div><h2>Три разные идеи</h2><div id="concepts" class="concepts"></div>
-<div class="consent"><input type="checkbox" id="consent"><label for="consent" style="margin:0;font-weight:500">Я разрешаю передать выбранную фотографию стороннему публичному сервису Hugging Face для генерации изображения. NEXORA не управляет политикой хранения данных этого сервиса. Не отправляйте конфиденциальные фотографии, если не согласны с такой обработкой.</label></div>
+<div class="consent"><input type="checkbox" id="consent"><label for="consent" style="margin:0;font-weight:500">Я разрешаю обработать выбранную фотографию в Cloudflare Workers AI (FLUX.2 Klein 9B) для генерации и в Moondream для проверки сохранения типа помещения. Исходное фото не сохраняется на сервере NEXORA. При исчерпании бесплатной дневной квоты генерация остановится; платные сервисы не подключаются.</label></div>
 <button id="render" class="full" disabled>Создать выбранные варианты</button>
 <div id="renderStatus" class="statusline" aria-live="polite"></div><div class="progress" id="progress"><i id="progressBar"></i></div>
-<p class="notice">Варианты создаются последовательно, чтобы не перегружать бесплатный публичный GPU-сервис. Лимит — 6 генераций в сутки на одно подключение.</p>
+<p class="notice">Варианты создаются последовательно. Общий лимит — 3 генерации в сутки на весь проект, чтобы использовать только бесплатную дневную квоту Cloudflare Workers AI. Платный резервный сервис отключён.</p>
 </div>
 </section>
 <aside>
 <div class="panel"><div class="step">03 / Результаты</div><h2>Ваши варианты дизайна</h2><div id="results" class="results"><div class="empty">Здесь появятся созданные изображения. Они сохраняются в локальной базе этого браузера.</div></div></div>
 <div class="panel"><h2>Хранение и приватность</h2><div id="providerStatus" class="notice">Проверяю доступность бесплатного генератора…</div>
-<label for="hfToken">Бесплатный Hugging Face Read token (если публичная квота исчерпана)</label>
-<input id="hfToken" type="password" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="hf_…">
-<div class="hint"><a href="https://huggingface.co/settings/tokens/new?tokenType=read" target="_blank" rel="noopener noreferrer">Создать бесплатный Read token</a>. Токен действует только в открытой вкладке: не сохраняется в IndexedDB, не отправляется в чат и не записывается в журналы.</div><p class="notice">Исходное фото не сохраняется на сервере NEXORA. При запуске генерации оно передаётся выбранному внешнему сервису. Готовые изображения временно хранятся в NEXORA до 24 часов для восстановления, а затем остаются в локальной базе браузера.</p><button id="clear" class="danger full">Удалить локальные фотографии и результаты</button><div id="clearStatus" class="statusline"></div></div>
+<p class="notice">Исходное фото не сохраняется на сервере NEXORA. При запуске генерации оно передаётся выбранному внешнему сервису. Готовые изображения временно хранятся в NEXORA до 24 часов для восстановления, а затем остаются в локальной базе браузера.</p><button id="clear" class="danger full">Удалить локальные фотографии и результаты</button><div id="clearStatus" class="statusline"></div></div>
 </aside>
 </div>
-<div class="footer">NEXORA Design Engine 1.1 · Модель генерации: Qwen Image Edit 2511 с ускоренным Rapid-AIO V19 и Style-Transfer LoRA. Результат требует проверки архитектором: модель может ошибаться в геометрии, деталях и функциональности. Не используйте изображение как строительный чертёж.</div>
+<div class="footer">NEXORA Design Engine 1.2 · FLUX.2 Klein 9B через Cloudflare Workers AI · Moondream room-identity quality gate. Результат требует проверки архитектором: модель может ошибаться в геометрии, деталях и функциональности. Не используйте изображение как строительный чертёж.</div>
 </main>
 <script>
 const $ = (id) => document.getElementById(id);
@@ -229,7 +227,7 @@ async function fetchAndSaveResult(job, result) {
     blob,
     conceptName: result.concept_name || job.conceptName,
     createdAt: new Date().toISOString(),
-    model: result.model_id || "Qwen Image Edit 2511 + Rapid-AIO V19",
+    model: result.model_id || "FLUX.2 Klein 9B",
     recovered: Boolean(result.recovered)
   });
   await dbPut("jobs", { ...job, state: "succeeded" });
@@ -274,9 +272,7 @@ async function renderOne(concept, index, total, renderBlob) {
   form.append("preserve", lines("preserve"));
   form.append("replaceable", lines("replace"));
   form.append("conceptId", concept.concept_id);
-  const hfToken = $("hfToken").value.trim();
-  const headers = hfToken ? { "X-HF-Token": hfToken } : {};
-  const response = await fetch("/api/render", { method: "POST", body: form, headers });
+  const response = await fetch("/api/render", { method: "POST", body: form });
   const data = await response.json();
   if (!response.ok) {
     await dbPut("jobs", { ...job, state: data.error || "failed", message: data.message });
@@ -323,9 +319,7 @@ function showRecovery(job) {
     button.disabled = true;
     setStatus("renderStatus", "Проверяю сохранённое задание…");
     try {
-      const hfToken = $("hfToken").value.trim();
-      const headers = hfToken ? { "X-HF-Token": hfToken } : {};
-      const response = await fetch("/api/jobs/" + job.id + "/recover", { method: "POST", headers });
+      const response = await fetch("/api/jobs/" + job.id + "/recover", { method: "POST" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || "Результат пока недоступен.");
       await fetchAndSaveResult(job, { ...data, result_url: "/api/results/" + job.id, concept_name: job.conceptName });
@@ -397,25 +391,14 @@ $("photo").addEventListener("change", async (event) => {
   setPhoto(file, file.name);
 });
 $("plan").addEventListener("click", planConcepts);
-let workerTokenConfigured = false;
-$("hfToken").addEventListener("input", () => {
-  const entered = $("hfToken").value.trim();
-  $("providerStatus").textContent = entered
-    ? "Личный токен введён для этой вкладки. Он будет передан через защищённый Worker в Hugging Face и не сохранится после закрытия страницы."
-    : workerTokenConfigured
-      ? "Личный HF_TOKEN уже настроен в Worker. Поле ниже можно оставить пустым."
-      : "Публичная квота GPU Hugging Face ограничена. Для продолжения без оплаты создайте бесплатный Read token и вставьте его сюда.";
-});
 $("consent").addEventListener("change", updateRenderButton);
 $("render").addEventListener("click", renderSelected);
 $("clear").addEventListener("click", clearLocal);
 (async function init() {
   try {
     const health = await fetch("/api/health").then((r) => r.json());
-    workerTokenConfigured = Boolean(health.provider_auth_configured);
-    $("providerStatus").textContent = workerTokenConfigured
-      ? "Личный Hugging Face token подключён в Worker. Используется квота вашего бесплатного аккаунта."
-      : "Публичная квота GPU Hugging Face ограничена. Для продолжения без оплаты можно создать бесплатный Read token и вставить его в поле ниже. Он не сохраняется в браузере.";
+    if (!health.ok || health.provider !== "cloudflare-workers-ai") throw new Error("Native Workers AI provider is unavailable.");
+    $("providerStatus").textContent = "Cloudflare Workers AI · FLUX.2 Klein 9B. До 3 генераций в сутки на весь проект; платные резервные сервисы отключены. Moondream проверяет сохранение типа помещения.";
     const saved = await dbGet("source", "active");
     if (saved?.blob) setPhoto(saved.blob, saved.name);
     await renderSavedResults();

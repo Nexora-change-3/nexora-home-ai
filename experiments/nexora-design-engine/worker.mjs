@@ -1,16 +1,15 @@
-import { resolveProviderToken } from "./auth/provider-token.mjs";
 import { createD1DispatchStore } from "./model-adapters/dispatch-ledger.mjs";
-import { createQwen2511FastAdapter } from "./model-adapters/qwen-2511-fast-adapter.mjs";
-import { createQwen2511FastTransport } from "./model-adapters/qwen-2511-fast-transport.mjs";
+import { createWorkersAiFlux2Klein9BAdapter, MODEL_ID, PROVIDER_ID } from "./model-adapters/workers-ai-flux-2-klein-9b.mjs";
+import { verifyRoomIdentity } from "./src/quality-gate/room-identity-gate.mjs";
 import { createDesignConcepts } from "./src/design-brain/concept-planner.mjs";
 import { APP_HTML } from "./app-shell.mjs";
 
 const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
 const MAX_RESULT_BYTES = 1_650_000;
-const MAX_DAILY_RENDERS = 6;
+const MAX_DAILY_RENDERS = 3;
 const RESULT_TTL_HOURS = 24;
 const ROOM_TYPES = new Set(["kitchen", "living_room", "bedroom", "bathroom", "hallway", "office", "studio", "other"]);
-const MODEL = "Qwen Image Edit 2511 + Rapid-AIO V19 + Style-Transfer";
+const MODEL = MODEL_ID;
 
 function fail(code, message, status = 400) {
   const error = new Error(message);
@@ -135,49 +134,68 @@ function makeConcepts(input) {
   });
 }
 
-function makeAdapter(env, request = null) {
-  const authToken = resolveProviderToken(request, env);
+function makeAdapter(env, sourceImage = null) {
+  if (!env.AI || typeof env.AI.run !== "function") throw fail("WORKERS_AI_UNAVAILABLE", "Cloudflare Workers AI is not configured for this project.", 503);
   const dispatchStore = createD1DispatchStore(env.DB);
-  const transport = createQwen2511FastTransport({ maxOutputBytes: MAX_RESULT_BYTES, authToken, debugUpstreamErrors: true });
-  return createQwen2511FastAdapter({
-    transport,
+  return createWorkersAiFlux2Klein9BAdapter({
+    AI: env.AI,
     dispatchStore,
     maxImageBytes: MAX_SOURCE_BYTES,
-    timeoutMs: 150000,
-    status: "ready",
+    maxOutputBytes: MAX_RESULT_BYTES,
     storeResult: async ({ requestId, bytes, mimeType, metadata }) => {
-      if (bytes.byteLength > MAX_RESULT_BYTES) {
-        throw fail("RESULT_TOO_LARGE", "Результат превышает безопасный размер временного хранилища. Попробуйте ещё раз позже.", 413);
-      }
+      const qualityGate = await verifyRoomIdentity({
+        AI: env.AI,
+        sourceImage,
+        candidateImage: { bytes, contentType: mimeType },
+        expectedRoomType: sourceImage?.roomType
+      });
+      const finalMetadata = { ...metadata, quality_gate: qualityGate };
       const createdAt = new Date().toISOString();
       const expiresAt = new Date(Date.now() + RESULT_TTL_HOURS * 60 * 60 * 1000).toISOString();
       await env.DB.prepare(
         "INSERT OR IGNORE INTO nexora_render_images (request_id, image_bytes, mime_type, metadata_json, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)"
-      ).bind(requestId, bytes, mimeType, JSON.stringify(metadata), createdAt, expiresAt).run();
+      ).bind(requestId, bytes, mimeType, JSON.stringify(finalMetadata), createdAt, expiresAt).run();
       const stored = await env.DB.prepare(
         "SELECT request_id FROM nexora_render_images WHERE request_id = ? LIMIT 1"
       ).bind(requestId).first();
       if (!stored) throw fail("RESULT_STORAGE_FAILED", "Не удалось сохранить готовое изображение.", 503);
-      return { image_ref: "nexora-render://" + requestId };
+      return { image_ref: "nexora-render://" + requestId, quality_gate: qualityGate };
+    },
+    getStoredResult: async (requestId) => {
+      const row = await env.DB.prepare(
+        "SELECT request_id, metadata_json FROM nexora_render_images WHERE request_id = ? LIMIT 1"
+      ).bind(requestId).first();
+      if (!row) return null;
+      let metadata;
+      try { metadata = JSON.parse(row.metadata_json || "{}"); } catch { throw fail("RESULT_METADATA_CORRUPT", "Сохранённые метаданные результата повреждены.", 500); }
+      return {
+        request_id: requestId,
+        status: "succeeded",
+        image_ref: "nexora-render://" + requestId,
+        provider: metadata.provider || PROVIDER_ID,
+        model_id: metadata.model_id || MODEL_ID,
+        model_revision: metadata.model_revision || null,
+        seed: metadata.seed ?? null,
+        quality_gate: metadata.quality_gate || null,
+        recovered: true
+      };
     }
   });
 }
 
 async function enforceRateLimit(env, request, requestId) {
-  const existing = await env.DB.prepare(
-    "SELECT request_id FROM nexora_render_dispatches WHERE request_id = ? LIMIT 1"
-  ).bind(requestId).first();
+  const existing = await env.DB.prepare("SELECT request_id FROM nexora_render_dispatches WHERE request_id = ? LIMIT 1").bind(requestId).first();
   if (existing) return;
   const ip = request.headers.get("cf-connecting-ip") || "unknown";
   const ipHash = await sha256(new TextEncoder().encode(ip));
   const day = new Date().toISOString().slice(0, 10);
   const now = new Date().toISOString();
-  const row = await env.DB.prepare(
-    "INSERT INTO nexora_render_limits (ip_hash, utc_day, render_count, updated_at) VALUES (?, ?, 1, ?) " +
-    "ON CONFLICT(ip_hash, utc_day) DO UPDATE SET render_count = render_count + 1, updated_at = excluded.updated_at " +
-    "WHERE render_count < ? RETURNING render_count"
-  ).bind(ipHash, day, now, MAX_DAILY_RENDERS).first();
-  if (!row) throw fail("DAILY_LIMIT_REACHED", "Достигнут дневной лимит генераций для этого подключения. Попробуйте завтра.", 429);
+  const sql = "INSERT INTO nexora_render_limits (ip_hash, utc_day, render_count, updated_at) VALUES (?, ?, 1, ?) ON CONFLICT(ip_hash, utc_day) DO UPDATE SET render_count = render_count + 1, updated_at = excluded.updated_at WHERE render_count < ? RETURNING render_count";
+  const globalRow = await env.DB.prepare(sql).bind("__nexora_global__", day, now, MAX_DAILY_RENDERS).first();
+  if (!globalRow) throw fail("GLOBAL_DAILY_LIMIT_REACHED", "На сегодня исчерпан бесплатный лимит NEXORA — 3 генерации на весь проект. Платная генерация не запускается.", 429);
+  const ipRow = await env.DB.prepare(sql).bind(ipHash, day, now, MAX_DAILY_RENDERS).first();
+  if (!ipRow) throw fail("DAILY_LIMIT_REACHED", "Для этого подключения исчерпан дневной лимит генераций.", 429);
+  return { global_count: globalRow.render_count, ip_count: ipRow.render_count };
 }
 
 async function handleRender(request, env) {
@@ -185,7 +203,7 @@ async function handleRender(request, env) {
   const file = form.get("image");
   const requestId = String(form.get("requestId") || "");
   const consent = form.get("externalProcessingConsent") === "true";
-  if (!consent) throw fail("EXTERNAL_PROCESSING_CONSENT_REQUIRED", "Перед отправкой фотографии необходимо подтвердить передачу изображения стороннему сервису.", 403);
+  if (!consent) throw fail("EXTERNAL_PROCESSING_CONSENT_REQUIRED", "Перед отправкой фотографии необходимо подтвердить обработку изображения в Cloudflare Workers AI.", 403);
   if (!file || typeof file.arrayBuffer !== "function") throw fail("SOURCE_IMAGE_REQUIRED", "Выберите фотографию помещения.");
   if (!/^[0-9a-f-]{36}$/i.test(requestId)) throw fail("INVALID_REQUEST_ID", "Идентификатор генерации недействителен.");
   if (file.size <= 0 || file.size > MAX_SOURCE_BYTES) throw fail("INVALID_IMAGE_SIZE", "Фотография должна быть не больше 8 МБ.");
@@ -210,7 +228,7 @@ async function handleRender(request, env) {
   if (!concept) throw fail("INVALID_CONCEPT", "Выбранная концепция не найдена. Сформируйте концепции заново.");
   await env.DB.prepare("DELETE FROM nexora_render_images WHERE expires_at <= ?").bind(new Date().toISOString()).run();
   await enforceRateLimit(env, request, requestId);
-  const adapter = makeAdapter(env, request);
+  const adapter = makeAdapter(env, { bytes, contentType: mimeType, roomType });
   const result = await adapter.render({
     request_id: requestId,
     source_image_ref: sourceImageRef,
@@ -218,7 +236,7 @@ async function handleRender(request, env) {
     design_brief: { render_instructions: concept.render_instructions },
     safety_policy: {
       external_image_processing_consent: true,
-      external_provider: "huggingface-zero-gpu"
+      external_provider: PROVIDER_ID
     },
     seed: 42
   });
@@ -289,10 +307,14 @@ export default {
         return json({
           ok: true,
           app: "NEXORA Design Engine",
-          version: "1.1.0",
+          version: "1.2.0",
           provider: "huggingface-zero-gpu",
           model: MODEL,
-          provider_auth_configured: Boolean(env.HF_TOKEN),
+          provider: PROVIDER_ID,
+          model_id: MODEL_ID,
+          daily_render_limit: MAX_DAILY_RENDERS,
+          paid_fallback_enabled: false,
+          quality_gate: "moondream-room-identity",
           output_storage: "Cloudflare D1 temporary; browser IndexedDB persistent",
           result_ttl_hours: RESULT_TTL_HOURS,
           max_daily_renders_per_ip: MAX_DAILY_RENDERS

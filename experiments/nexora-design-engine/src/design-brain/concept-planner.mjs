@@ -7,7 +7,7 @@
 const ARCHETYPES = [
   {
     id: "architectural",
-    name: "Architectural clarity",
+    name: "Architectural minimalism",
     thesis: "A disciplined, architectural composition with a few strong material statements.",
     palette: ["chalk", "warm grey", "graphite"],
     materials: ["matte mineral surface", "large-format stone or porcelain", "dark anodized metal"],
@@ -19,7 +19,7 @@ const ARCHETYPES = [
   },
   {
     id: "organic",
-    name: "Warm natural living",
+    name: "Warm Mediterranean contemporary",
     thesis: "A tactile, welcoming interior built around natural textures, soft transitions and human comfort.",
     palette: ["natural oak", "sand", "warm white", "muted olive"],
     materials: ["natural wood veneer", "honed stone", "woven or textured natural fibre"],
@@ -31,7 +31,7 @@ const ARCHETYPES = [
   },
   {
     id: "expressive",
-    name: "Expressive contemporary",
+    name: "Expressive walnut and stone",
     thesis: "A confident, editorial interior using a deliberate focal point, material contrast and distinctive forms.",
     palette: ["deep ink", "clay", "brushed bronze", "soft ivory"],
     materials: ["coloured lacquer or stained timber", "expressive stone", "brushed metal"],

@@ -31,10 +31,10 @@ test("serves health metadata without exposing credentials or image data", async 
   const body = await response.json();
   assert.equal(response.status, 200);
   assert.equal(body.ok, true);
-  assert.equal(body.provider, "huggingface-zero-gpu");
+  assert.equal(body.provider, "cloudflare-workers-ai");
   assert.match(body.model, /Qwen Image Edit 2511/);
   assert.equal(body.version, "1.1.0");
-  assert.equal(body.provider_auth_configured, false);
+  assert.equal(body.paid_fallback_enabled, false);
   assert.equal(body.output_storage, "Cloudflare D1 temporary; browser IndexedDB persistent");
   assert.equal(JSON.stringify(body).includes("token"), false);
 });
