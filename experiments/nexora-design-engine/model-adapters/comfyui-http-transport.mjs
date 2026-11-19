@@ -1,5 +1,12 @@
 const DEFAULT_MAX_RESPONSE_BYTES = 40 * 1024 * 1024;
 
+function sniffImageMime(bytes) {
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
+  if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47 && bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a) return "image/png";
+  if (bytes.length >= 12 && String.fromCharCode(...bytes.slice(0, 4)) === "RIFF" && String.fromCharCode(...bytes.slice(8, 12)) === "WEBP") return "image/webp";
+  return null;
+}
+
 function fail(code, message) {
   const error = new Error(message);
   error.code = code;
@@ -50,7 +57,7 @@ export function createComfyUiHttpTransport({
   async function request(path, options, code, message) {
     let response;
     try {
-      response = await fetchImpl(endpoint(path), { ...options, headers: { ...headers, ...(options?.headers || {}) } });
+      response = await fetchImpl(endpoint(path), { ...options, redirect: "error", headers: { ...headers, ...(options?.headers || {}) } });
     } catch {
       throw fail(code, message);
     }
@@ -61,6 +68,7 @@ export function createComfyUiHttpTransport({
     async uploadImage({ bytes, mimeType, filename, signal }) {
       assert(bytes instanceof Uint8Array && bytes.byteLength > 0, "INVALID_IMAGE", "A non-empty image is required for upload.");
       assert(["image/jpeg", "image/png", "image/webp"].includes(mimeType), "UNSUPPORTED_IMAGE_TYPE", "The source image type is not supported.");
+      assert(sniffImageMime(bytes) === mimeType, "INVALID_IMAGE_SIGNATURE", "The source image bytes do not match the declared MIME type.");
       const safeName = String(filename || "nexora-source").replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 100);
       const extension = mimeType === "image/jpeg" ? "jpg" : mimeType === "image/png" ? "png" : "webp";
       const form = new FormData();
@@ -101,8 +109,11 @@ export function createComfyUiHttpTransport({
       if (!response.ok) throw fail("OUTPUT_FETCH_FAILED", "Could not retrieve the ComfyUI output image.");
       const declaredLength = Number(response.headers?.get?.("content-length") || 0);
       assert(!declaredLength || declaredLength <= maxResponseBytes, "OUTPUT_TOO_LARGE", "The rendered image exceeds the configured size limit.");
+      const contentType = response.headers?.get?.("content-type");
+      assert(!contentType || /^image\/png(?:\s*;|\s*$)/i.test(contentType), "INVALID_OUTPUT_MIME", "The FireRed workflow must return a PNG image.");
       const bytes = new Uint8Array(await response.arrayBuffer());
       assert(bytes.byteLength > 0 && bytes.byteLength <= maxResponseBytes, "INVALID_OUTPUT", "ComfyUI returned an empty or oversized output image.");
+      assert(sniffImageMime(bytes) === "image/png", "INVALID_OUTPUT_SIGNATURE", "ComfyUI output bytes are not a valid PNG signature.");
       return bytes;
     },
 

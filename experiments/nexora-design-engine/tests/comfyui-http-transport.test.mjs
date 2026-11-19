@@ -30,10 +30,12 @@ test("uploads image with server-side bearer auth and returns only ComfyUI image 
     captured = { url, init };
     return response({ name: "upload_1.png", subfolder: "", type: "input" });
   }});
-  const result = await transport.uploadImage({ bytes: new Uint8Array([1, 2, 3]), mimeType: "image/png", filename: "source", signal: undefined });
+  const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+  const result = await transport.uploadImage({ bytes: png, mimeType: "image/png", filename: "source", signal: undefined });
   assert.equal(result.name, "upload_1.png");
   assert.equal(captured.url, "https://comfy.private.example/upload/image");
   assert.equal(captured.init.headers.Authorization, "Bearer test-token");
+  assert.equal(captured.init.redirect, "error");
   assert.ok(captured.init.body instanceof FormData);
 });
 
@@ -56,7 +58,7 @@ test("fetches output only through the configured origin and blocks path traversa
   let called;
   const transport = createComfyUiHttpTransport({ ...base, fetchImpl: async (url) => {
     called = url;
-    return response(new Uint8Array([9, 8, 7]).buffer);
+    return response(new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]).buffer, 200, { "content-type": "image/png" });
   }});
   const bytes = await transport.getOutput({ filename: "render.png", subfolder: "2026/session", type: "output" });
   assert.deepEqual([...bytes], [9, 8, 7]);
@@ -65,7 +67,7 @@ test("fetches output only through the configured origin and blocks path traversa
 });
 
 test("enforces output size and does not expose upstream response details", async () => {
-  const transport = createComfyUiHttpTransport({ ...base, maxResponseBytes: 2, fetchImpl: async () => response(new Uint8Array([1, 2, 3]).buffer) });
+  const transport = createComfyUiHttpTransport({ ...base, maxResponseBytes: 2, fetchImpl: async () => response(new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]).buffer, 200, { "content-type": "image/png" }) });
   await assert.rejects(() => transport.getOutput({ filename: "large.png" }), { code: "INVALID_OUTPUT" });
   const broken = createComfyUiHttpTransport({ ...base, fetchImpl: async () => { throw new Error("private endpoint details"); } });
   await assert.rejects(() => broken.getHistory("job_123"), (error) => error.code === "HISTORY_FAILED" && !error.message.includes("private endpoint"));
@@ -81,4 +83,14 @@ test("delegates result storage without logging or changing image bytes", async (
   const result = await transport.storeResult(input);
   assert.equal(result.image_ref, "nexora://immutable/result");
   assert.equal(stored, input);
+});
+
+test("rejects source bytes whose signature does not match the declared MIME type", async () => {
+  const transport = createComfyUiHttpTransport({ ...base, fetchImpl: async () => { throw new Error("must not be called"); } });
+  await assert.rejects(() => transport.uploadImage({ bytes: new Uint8Array([1, 2, 3]), mimeType: "image/png", filename: "fake", signal: undefined }), { code: "INVALID_IMAGE_SIGNATURE" });
+});
+
+test("rejects non-PNG output even when the endpoint responds successfully", async () => {
+  const transport = createComfyUiHttpTransport({ ...base, fetchImpl: async () => response(new Uint8Array([1, 2, 3]).buffer, 200, { "content-type": "image/jpeg" }) });
+  await assert.rejects(() => transport.getOutput({ filename: "wrong.jpg" }), { code: "INVALID_OUTPUT_MIME" });
 });

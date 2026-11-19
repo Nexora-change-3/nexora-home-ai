@@ -147,7 +147,7 @@ export function createComfyUiRenderAdapter({
       const apiWorkflow = clone(pinnedWorkflow);
       applyNodeInput(apiWorkflow, nodeInputs.image, uploaded.name);
       applyNodeInput(apiWorkflow, nodeInputs.prompt, request.design_brief.render_instructions || request.design_brief.prompt);
-      if (nodeInputs.seed) applyNodeInput(apiWorkflow, nodeInputs.seed, request.seed, false);
+      if (nodeInputs.seed && request.seed !== undefined && request.seed !== null) applyNodeInput(apiWorkflow, nodeInputs.seed, request.seed, false);
       checkActive();
 
       const queued = await context.run((signal) => transport.queuePrompt({ workflow: apiWorkflow, clientId: request.request_id, signal }));
