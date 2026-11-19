@@ -1,6 +1,11 @@
 name: FireRed Space API preflight
 
 on:
+  push:
+    branches:
+      - experiment/nexora-design-engine
+    paths:
+      - .github/workflows/firered-space-preflight.yml
   workflow_dispatch:
 
 permissions:
