@@ -23,7 +23,7 @@ main{width:min(100% - 28px,980px);margin:0 auto;padding:24px 0 60px}.top{display
     <option value="kitchen">Кухня</option><option value="bathroom">Ванная</option><option value="toilet">Туалет</option><option value="combined_bathroom">Совмещённый санузел</option><option value="hallway">Прихожая</option><option value="living_room">Гостиная</option><option value="bedroom">Спальня</option><option value="kids_room">Детская</option><option value="office">Кабинет</option><option value="other">Другое</option>
   </select></div>
   <div class="field"><label for="roomFile">Фотография помещения</label><input class="file" id="roomFile" type="file" accept="image/*"></div>
-  <div class="row"><button class="secondary" id="loadSaved" type="button">Взять последнее фото из NEXORA</button><span class="muted">Попробуем использовать сохранённую сессию предыдущей версии на этом устройстве.</span></div>
+  <div class="field"><label for="backupFile">Импорт резервной копии из прежней NEXORA (необязательно)</label><input class="file" id="backupFile" type="file" accept=".json,application/json"><span class="muted">Выберите JSON-копию, экспортированную в старой версии. Фото и референс восстановятся из неё — загружать их отдельно не потребуется.</span></div>
   <img class="preview" id="roomPreview" alt="Фото помещения">
   <div class="field"><label for="userReference">Дополнительный референс (необязательно)</label><input class="file" id="userReference" type="file" accept="image/*"></div>
   <img class="preview" id="referencePreview" alt="Дополнительный референс">
@@ -79,19 +79,17 @@ function resizeBlob(file,maxSide){return new Promise((resolve,reject)=>{const im
 function setRoom(file){roomFile=file;roomUrl=preview(file,$("roomPreview"),roomUrl);analysisData=null;analysisConfirmed=false;$("analysisCard").classList.add("hidden");$("confirmBtn").classList.add("hidden");$("generateBtn").disabled=true}
 $("roomFile").addEventListener("change",e=>setRoom(e.target.files&&e.target.files[0]||null));
 $("userReference").addEventListener("change",e=>{userReference=e.target.files&&e.target.files[0]||null;referenceUrl=preview(userReference,$("referencePreview"),referenceUrl)});
-$("loadSaved").addEventListener("click",async()=>{
- const status=$("analyzeStatus");status.textContent="Ищем последнюю сохранённую сессию…";
+$("backupFile").addEventListener("change",async e=>{
+ const file=e.target.files&&e.target.files[0];if(!file)return;const status=$("analyzeStatus");status.textContent="Читаем резервную копию прежней NEXORA…";
  try{
-  const db=await new Promise((resolve,reject)=>{const req=indexedDB.open("nexora_home_ai_local");req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);req.onupgradeneeded=()=>{req.transaction.abort()}});
-  if(!db.objectStoreNames.contains("studioSessions"))throw new Error("В старой версии не найдено сохранённых сессий.");
-  const sessions=await new Promise((resolve,reject)=>{const req=db.transaction("studioSessions","readonly").objectStore("studioSessions").getAll();req.onsuccess=()=>resolve(req.result||[]);req.onerror=()=>reject(req.error)});
-  db.close();sessions.sort((a,b)=>(b.createdAt||b.id)-(a.createdAt||a.id));const latest=sessions.find(x=>x.roomBlob);
-  if(!latest)throw new Error("Сохранённое фото комнаты не найдено.");
-  setRoom(new File([latest.roomBlob],"nexora-saved-room.jpg",{type:latest.roomBlob.type||"image/jpeg"}));
-  if(latest.referenceBlob){userReference=new File([latest.referenceBlob],"nexora-saved-reference.jpg",{type:latest.referenceBlob.type||"image/jpeg"});referenceUrl=preview(userReference,$("referencePreview"),referenceUrl);$("userReference").value=""}
+  const backup=JSON.parse(await file.text());if(backup.format!=="NEXORA_HOME_AI_BACKUP"||![1,2,3,4,5].includes(backup.version))throw new Error("Формат резервной копии не распознан.");
+  const sessions=Array.isArray(backup.studioSessions)?backup.studioSessions.slice():[];sessions.sort((a,b)=>(b.createdAt||b.id)-(a.createdAt||a.id));const latest=sessions.find(x=>x.roomBlob&&x.roomBlob.data);if(!latest)throw new Error("В копии нет сохранённого фото AI Studio.");
+  const decode=raw=>{const binary=atob(raw.data);const bytes=new Uint8Array(binary.length);for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);return new Blob([bytes],{type:raw.mime||"image/jpeg"})};
+  const roomBlob=decode(latest.roomBlob);setRoom(new File([roomBlob],"nexora-saved-room.jpg",{type:roomBlob.type||"image/jpeg"}));
+  if(latest.referenceBlob&&latest.referenceBlob.data){const refBlob=decode(latest.referenceBlob);userReference=new File([refBlob],"nexora-saved-reference.jpg",{type:refBlob.type||"image/jpeg"});referenceUrl=preview(userReference,$("referencePreview"),referenceUrl)}
   if(latest.style&&styles.some(x=>x.name===latest.style)){selectedStyle=latest.style;styleGrid.querySelectorAll(".style").forEach(x=>x.setAttribute("aria-pressed",String(x.dataset.style===selectedStyle)))}
-  status.textContent="Сохранённое фото восстановлено. Выберите тип помещения и запустите анализ.";
- }catch(e){status.textContent="Не удалось получить сохранённое фото: "+e.message}
+  status.textContent="Фото восстановлено из резервной копии. Выберите тип помещения и запустите анализ.";
+ }catch(error){status.textContent="Не удалось импортировать копию: "+error.message}
 });
 $("analyzeBtn").addEventListener("click",async()=>{
  if(!roomFile){$("analyzeStatus").textContent="Сначала выберите фото или восстановите сохранённую сессию.";return}
@@ -116,6 +114,7 @@ $("analyzeBtn").addEventListener("click",async()=>{
  }catch(e){$("analyzeStatus").textContent="Анализ остановлен: "+e.message}
  finally{button.disabled=false}
 });
+$("roomType").addEventListener("change",()=>{analysisData=null;analysisConfirmed=false;$("analysisCard").classList.add("hidden");$("confirmBtn").classList.add("hidden");$("generateBtn").disabled=true;$("analyzeStatus").textContent="Тип помещения изменён. Выполните анализ заново."});
 $("confirmBtn").addEventListener("click",()=>{analysisConfirmed=true;$("generateBtn").disabled=false;$("confirmBtn").classList.add("hidden");$("analyzeStatus").textContent="Вы подтвердили выбранный тип помещения. Можно создавать концепции."});
 function escapeHtml(value){return String(value).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 async function loadProfile(){const response=await fetch("/style-profiles.json",{cache:"no-store"});if(!response.ok)throw new Error("Не удалось загрузить библиотеку стилевых профилей.");const data=await response.json();return data.profiles&&data.profiles[selectedStyle]||{}}
@@ -139,7 +138,7 @@ $("generateBtn").addEventListener("click",async()=>{
  finally{button.disabled=false}
 });
 const originalFile=$("roomFile");
-function updateDimensions(file){if(!file)return;const img=new Image(),url=URL.createObjectURL(file);img.onload=()=>{roomDimensions={width:Math.max(256,Math.round(img.naturalWidth*Math.min(1,1024/Math.max(img.naturalWidth,img.naturalHeight)))),height:Math.max(256,Math.round(img.naturalHeight*Math.min(1,1024/Math.max(img.naturalWidth,img.naturalHeight))))};URL.revokeObjectURL(url)};img.src=url}
+function updateDimensions(file){if(!file)return;const img=new Image(),url=URL.createObjectURL(file);img.onload=()=>{roomDimensions={width:Math.max(256,Math.floor(img.naturalWidth*Math.min(1,1024/Math.max(img.naturalWidth,img.naturalHeight))/16)*16),height:Math.max(256,Math.floor(img.naturalHeight*Math.min(1,1024/Math.max(img.naturalWidth,img.naturalHeight))/16)*16)};URL.revokeObjectURL(url)};img.src=url}
 originalFile.addEventListener("change",e=>updateDimensions(e.target.files&&e.target.files[0]));
 const nativeSetRoom=setRoom;
 setRoom=function(file){nativeSetRoom(file);updateDimensions(file)};
