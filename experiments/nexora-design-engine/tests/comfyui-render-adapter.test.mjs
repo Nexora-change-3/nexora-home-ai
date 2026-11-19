@@ -214,3 +214,37 @@ test("reports a missing dispatch record without contacting ComfyUI", async () =>
   await assert.rejects(adapter.recover("missing"), { code: "DISPATCH_RECORD_NOT_FOUND" });
   assert.equal(calls.length, 0);
 });
+
+
+test("a shared dispatch lease prevents concurrent recovery across adapter instances", async () => {
+  const dispatchStore = createMemoryDispatchStore();
+  const workflowHash = `sha256:${createHash("sha256").update(stableStringify({ "1": { inputs: { image: "", text: "" } }, "9": { inputs: {} } })).digest("hex")}`;
+  await dispatchStore.claim({ requestId: "req-1", sourceImageRef: "nexora://source/original", workflowHash });
+  await dispatchStore.markQueued("req-1", "prompt-123");
+
+  let markHistoryStarted;
+  const historyStarted = new Promise((resolve) => { markHistoryStarted = resolve; });
+  let releaseHistory;
+  const historyGate = new Promise((resolve) => { releaseHistory = resolve; });
+  const first = setup({
+    options: { dispatchStore },
+    transport: {
+      async getHistory() {
+        markHistoryStarted();
+        await historyGate;
+        return { "prompt-123": { status: { completed: true }, outputs: { "9": { images: [{ filename: "render.png", subfolder: "", type: "output" }] } } } };
+      }
+    }
+  });
+  const pending = first.adapter.recover("req-1");
+  await historyStarted;
+
+  const second = setup({ options: { dispatchStore } });
+  await assert.rejects(second.adapter.recover("req-1"), { code: "RECOVERY_ALREADY_CLAIMED" });
+  assert.equal(second.calls.length, 0);
+
+  releaseHistory();
+  const result = await pending;
+  assert.equal(result.status, "succeeded");
+  assert.equal((await dispatchStore.get("req-1")).state, "succeeded");
+});
