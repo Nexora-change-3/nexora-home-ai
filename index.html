@@ -68,11 +68,10 @@ async function renderEstimate(room,holder){const c=calc(room),saved=(await byInd
 
 const AI_SETTINGS_KEY='nexora_home_ai_cloudflare_settings';
 function getAISettings(){try{return JSON.parse(localStorage.getItem(AI_SETTINGS_KEY)||'{}')}catch{return {}}}
-function copyCloudflareForm(source){const copy=new FormData();for(const [name,value] of source.entries())copy.append(name,value);return copy}
 async function sendCloudflareRequest(form,settings){
   let proxyError=null;
   try{
-    const response=await fetch('/api/generate',{method:'POST',headers:{'X-NEXORA-KEY':settings.key},body:copyCloudflareForm(form),cache:'no-store'});
+    const response=await fetch('/api/generate',{method:'POST',headers:{'X-NEXORA-KEY':settings.key},body:form,cache:'no-store'});
     if(response.status!==502)return response;
     let data=null;try{data=await response.clone().json()}catch{}
     const message=String(data&&data.error||'');
@@ -80,7 +79,7 @@ async function sendCloudflareRequest(form,settings){
     proxyError=new Error(message);
   }catch(error){proxyError=error}
   try{
-    return await fetch(settings.endpoint,{method:'POST',headers:{'X-NEXORA-KEY':settings.key},body:copyCloudflareForm(form),mode:'cors',credentials:'omit',cache:'no-store'});
+    return await fetch(settings.endpoint,{method:'POST',headers:{'X-NEXORA-KEY':settings.key},body:form,mode:'cors',credentials:'omit',cache:'no-store'});
   }catch(directError){
     const describe=e=>e?((e.name||'Error')+': '+(e.message||String(e))):'неизвестная ошибка';
     throw new Error('Pages Function: '+describe(proxyError)+'. Прямой Worker: '+describe(directError)+'.');
