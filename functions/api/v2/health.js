@@ -13,5 +13,9 @@ export async function onRequest({ request, env }) {
   const origin = request.headers.get("Origin");
   if (origin && !allowedOrigin(origin)) return Response.json({ error: "Источник запроса не разрешён." }, { status: 403 });
   if (!env.NEXORA_AI) return Response.json({ error: "Не подключён V2 AI service binding." }, { status: 503 });
-  return env.NEXORA_AI.fetch(request);
+  const internal = new Request("https://nexora-ai-visualizer-v2.internal/api/v2/health", {
+    method: "GET",
+    headers: request.headers
+  });
+  return env.NEXORA_AI.fetch(internal);
 }
