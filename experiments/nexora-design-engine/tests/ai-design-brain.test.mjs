@@ -23,7 +23,7 @@ function concept(id, thesis, layout, material, focal) {
     focal_point: focal,
     functional_rationale: "Maintain safe circulation and practical work zones.",
     preserve: ["north window"],
-    replace: [],
+    replace: [`${id} cabinet fronts`, `${id} worktops`, `${id} backsplash`],
     render_instructions: "Photorealistic redesign using the supplied original kitchen photograph; preserve the north window."
   };
 }
@@ -80,4 +80,22 @@ test("adapter fails closed when model returns invalid concepts", async () => {
     () => createAiDesignConcepts({ input, adapter: { async generateText() { return { ...validResponse, concepts: [] }; } } }),
     /failed validation/
   );
+});
+
+test("rejects concepts that replace fewer than three authorized elements", () => {
+  const weak = structuredClone(validResponse);
+  weak.concepts[0].replace = ["cabinet colour"];
+  const result = validateDesignBrainResponse(weak, input.sourceImageId);
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some(error => error.includes("at least three authorized design changes")));
+});
+
+test("rejects a set whose concepts repeat the same material palette and focal point", () => {
+  const similar = structuredClone(validResponse);
+  similar.concepts[2].material_palette = [...similar.concepts[0].material_palette];
+  similar.concepts[2].focal_point = similar.concepts[0].focal_point;
+  similar.concepts[2].layout_strategy = similar.concepts[0].layout_strategy;
+  const result = validateDesignBrainResponse(similar, input.sourceImageId);
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some(error => error.includes("too similar")));
 });

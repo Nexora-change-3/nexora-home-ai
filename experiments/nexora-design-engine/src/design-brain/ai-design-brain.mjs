@@ -50,6 +50,9 @@ export function buildDesignBrainPrompt(input) {
       "Return ONLY valid JSON. Do not include markdown fences or commentary.",
       "Create exactly three genuinely different, professionally coherent interior design concepts for the SAME source room.",
       "The concepts must differ in design thesis, spatial strategy, material choices and visual focal point; changing only colours is invalid.",
+      "Each concept must replace at least three meaningful elements from the explicitly authorized replaceable list. A palette-only refresh or surface filter is not a redesign.",
+      "Give each concept a distinct material palette, layout strategy and focal point; vary lighting and furniture direction as well.",
+      "The render instruction must explicitly demand a substantial redesign, not a recolour, and name the concrete architectural/material changes to make.",
       "Treat the source image as immutable evidence of the existing room. Never invent dimensions or claim an unverified measurement.",
       "Respect fixed and preserved constraints. Never move openings, structural elements or services unless the user explicitly authorizes it and the constraint ledger permits it.",
       "An item marked unknown is not permission to remove or replace it. Do not decide it is replaceable without explicit user authorization.",
@@ -82,7 +85,7 @@ export function buildDesignBrainPrompt(input) {
           render_instructions: "detailed photorealistic image-edit instruction tied to the source photo"
         }]
       }, null, 2),
-      "Return exactly three concept objects. Every listed field is required. Arrays must be non-empty except preserve or replace may be empty."
+      "Return exactly three concept objects. Every listed field is required. All arrays must be non-empty; preserve must contain at least one ledger-backed element and replace at least three explicitly authorized elements."
     ].join("\n")
   };
 }
@@ -119,10 +122,12 @@ export function validateDesignBrainResponse(raw, expectedSourceImageId) {
         errors.push(`${prefix}.${key} is required.`);
       } else if (REQUIRED_ARRAYS.includes(key)) {
         if (!Array.isArray(concept[key])) errors.push(`${prefix}.${key} must be an array.`);
-        else if (!["preserve", "replace"].includes(key) && (concept[key].length === 0 || concept[key].some(item => !nonEmptyString(item)))) {
-          errors.push(`${prefix}.${key} must contain non-empty items.`);
-        } else if (concept[key].some(item => !nonEmptyString(item))) {
+        else if (concept[key].some(item => !nonEmptyString(item))) {
           errors.push(`${prefix}.${key} items must be non-empty strings.`);
+        } else if (concept[key].length === 0) {
+          errors.push(`${prefix}.${key} must contain non-empty items.`);
+        } else if (key === "replace" && concept[key].length < 3) {
+          errors.push(`${prefix}.replace must contain at least three authorized design changes; recolouring alone is invalid.`);
         }
       }
     }
@@ -142,6 +147,24 @@ export function validateDesignBrainResponse(raw, expectedSourceImageId) {
     if (signature && signatures.has(signature)) errors.push("Duplicate concept detected; cosmetic variations do not count.");
     if (signature) signatures.add(signature);
   });
+  const overlap = (left, right) => {
+    const a = new Set((left || []).map(normalize).filter(Boolean));
+    const b = new Set((right || []).map(normalize).filter(Boolean));
+    const denominator = Math.min(a.size, b.size);
+    if (!denominator) return 1;
+    let shared = 0; for (const item of a) if (b.has(item)) shared++;
+    return shared / denominator;
+  };
+  for (let i = 0; i < parsed.concepts.length; i++) for (let j = i + 1; j < parsed.concepts.length; j++) {
+    const a = parsed.concepts[i], b = parsed.concepts[j];
+    let distinct = 0;
+    if (normalize(a.layout_strategy) !== normalize(b.layout_strategy)) distinct++;
+    if (normalize(a.focal_point) !== normalize(b.focal_point)) distinct++;
+    if (overlap(a.material_palette, b.material_palette) <= 0.5) distinct++;
+    if (overlap(a.lighting_strategy, b.lighting_strategy) <= 0.5) distinct++;
+    if (overlap(a.furniture_direction, b.furniture_direction) <= 0.5) distinct++;
+    if (distinct < 3) errors.push(`Concepts ${i + 1} and ${j + 1} are too similar; at least three design dimensions must differ.`);
+  }
   return { valid: errors.length === 0, errors, value: errors.length === 0 ? parsed : undefined };
 }
 

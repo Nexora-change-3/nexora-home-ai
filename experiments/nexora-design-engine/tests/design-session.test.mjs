@@ -23,7 +23,7 @@ const concepts = ["a","b","c"].map((id, i) => ({
   focal_point: ["stone island","timber niche","metal hood"][i],
   functional_rationale: "Maintain practical circulation and appliance access.",
   preserve: ["north window"],
-  replace: [],
+  replace: [["cabinet fronts","worktops","backsplash"],["cabinet fronts","backsplash","island finish"],["cabinet fronts","worktops","lighting fixtures"]][i],
   render_instructions: "Create a substantial photorealistic redesign based on the original photo."
 }));
 const textAdapter = { provider: "mock", modelId: "test", async generateText() {
