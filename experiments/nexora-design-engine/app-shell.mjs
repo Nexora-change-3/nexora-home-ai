@@ -55,7 +55,7 @@ button{border:0;border-radius:10px;background:var(--accent);color:white;font:600
 Светильники и сценарии освещения
 Свободно стоящая мебель
 Фурнитура и декор</textarea>
-<div class="consent"><input type="checkbox" id="consent"><label for="consent" style="margin:0;font-weight:500">Я разрешаю передать исходную фотографию и, если добавлен, фото-референс в Cloudflare Workers AI: анализ помещения и дизайн-языка (Moondream), разработка трёх концепций (Llama 3.3 70B) и генерация изображений (FLUX.2 Dev). Исходник и референс не сохраняются на сервере; сервер временно хранит только концепции и результаты. Бесплатная квота ограничена; платные сервисы не подключаются.</label></div>
+<div class="consent"><input type="checkbox" id="consent"><label for="consent" style="margin:0;font-weight:500">Я разрешаю передать исходную фотографию и, если добавлен, фото-референс в Cloudflare Workers AI: анализ помещения и дизайн-языка (Moondream), разработка трёх концепций (Llama 3.3 70B) и генерация изображений (FLUX.2 Dev). Сами файлы изображений не сохраняются на сервере; для проверки качества сервер временно хранит концепции и структурированные сведения об исходной комнате и референсе, а также результаты. Бесплатная квота ограничена; платные сервисы не подключаются.</label></div>
 <button id="plan" class="secondary full">Сформировать 3 дизайнерские концепции</button>
 <div id="planStatus" class="statusline" aria-live="polite"></div><div id="referenceAnalysis" class="reference-analysis" hidden></div>
 </div>

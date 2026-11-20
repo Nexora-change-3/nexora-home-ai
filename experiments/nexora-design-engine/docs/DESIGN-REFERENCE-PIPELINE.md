@@ -30,7 +30,7 @@ NEXORA now accepts two separate images:
 - A reference cannot authorize moving/removing walls, openings, appliances, plumbing or fixed services.
 - Unknown source-room elements remain unknown; they are not replaceable by implication.
 - Reference-room objects, layout, openings and proportions must not be copied literally.
-- Reference image bytes are not persisted in D1. The design-language analysis is returned to the browser and used to form concepts; the existing temporary concept/result storage policy remains unchanged.
+- Source and reference image bytes are not persisted in D1. Structured room observations, constraints, reference design-language analysis and concept instructions are temporarily stored together in the design session (24-hour TTL) so the post-render reviewer can compare the candidate with the original evidence. Rendered images remain under the existing temporary result-storage policy.
 - A missing reference is valid. The existing style/brief-driven flow continues without a reference-analysis call.
 
 ## Current limitations

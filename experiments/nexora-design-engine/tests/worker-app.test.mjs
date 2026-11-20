@@ -20,7 +20,7 @@ test("serves the standalone app with restrictive security headers", async () => 
   assert.match(html, /NEXORA Design Engine/);
   assert.match(html, /FLUX\.2 Dev/);
   assert.match(html, /Llama 3\.3 70B/);
-  assert.match(html, /Исходник и референс не сохраняются на сервере/);
+  assert.match(html, /Сами файлы изображений не сохраняются на сервере/);
   assert.ok(html.indexOf('id="consent"') < html.indexOf('id="plan"'), "Processing consent must be visible before the analysis button.");
   assert.doesNotMatch(html, /\\\\1|\\\\2/);
   assert.match(html, /externalProcessingConsent/);
@@ -28,8 +28,8 @@ test("serves the standalone app with restrictive security headers", async () => 
   assert.match(html, /id="referenceAnalysis"/);
   assert.match(html, /qualityGate: result.quality_gate/);
   assert.match(html, /quality-note/);
-  assert.match(html, /Исходник и фото-референс не сохраняются на сервере/i);
-  assert.match(html, /исходник и референс не сохраняются на сервере/i);
+  assert.match(html, /Сами файлы изображений не сохраняются на сервере/i);
+  assert.match(html, /сами файлы изображений не сохраняются на сервере/i);
   assert.match(html, /анализирует дизайн-язык|дизайн-язык референса|Фото-референс/);
   assert.match(html, /Корпуса и фасады мебели/);
   assert.match(html, /Светильники и сценарии освещения/);
