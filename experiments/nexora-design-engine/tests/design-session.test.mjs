@@ -24,6 +24,7 @@ const concepts = ["a","b","c"].map((id, i) => ({
   functional_rationale: "Maintain practical circulation and appliance access.",
   preserve: ["north window"],
   replace: [["cabinet fronts","worktops","backsplash"],["cabinet fronts","backsplash","island finish"],["cabinet fronts","worktops","lighting fixtures"]][i],
+  major_design_moves: ["Recompose the cabinet architecture and storage hierarchy", "Introduce a new material and edge profile to the work surface", "Create a new architectural focal point with integrated lighting"],
   render_instructions: "Create a substantial photorealistic redesign based on the original photo."
 }));
 const textAdapter = { provider: "mock", modelId: "test", async generateText() {
@@ -36,7 +37,8 @@ test("design session connects photo vision, constraint ledger and AI concept ada
     textAdapter,
     sourceImage,
     roomType: "kitchen",
-    stylePreference: "contemporary"
+    stylePreference: "contemporary",
+    constraints: { replaceable: ["cabinet fronts", "worktops", "backsplash", "island finish", "lighting fixtures"] }
   });
   assert.equal(result.status, "design_concepts_ready");
   assert.equal(result.source_image_immutable, true);
