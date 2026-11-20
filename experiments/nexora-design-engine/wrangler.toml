@@ -6,8 +6,8 @@ preview_urls = false
 
 [[d1_databases]]
 binding = "DB"
-database_name = "nexora-design-engine-experiment"
-database_id = "69862f96-a52f-4645-9a3c-fb0a96b8bbcd"
+database_name = "nexora-design-engine-experiment-isolated"
+database_id = "8ae4bbdc-81ca-48b8-9061-2a6a56b12030"
 
 [[ai]]
 binding = "AI"
