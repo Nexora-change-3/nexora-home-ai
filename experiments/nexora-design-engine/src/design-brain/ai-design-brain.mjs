@@ -12,7 +12,7 @@ const REQUIRED_TEXT = [
   "functional_rationale",
   "render_instructions"
 ];
-const REQUIRED_ARRAYS = ["material_palette", "lighting_strategy", "furniture_direction", "preserve", "replace"];
+const REQUIRED_ARRAYS = ["material_palette", "lighting_strategy", "furniture_direction", "preserve", "replace", "major_design_moves"];
 const DIRECTIONS = ["concept_id", ...REQUIRED_TEXT, ...REQUIRED_ARRAYS];
 
 function nonEmptyString(value) {
@@ -42,15 +42,20 @@ export function buildDesignBrainPrompt(input) {
     verified_dimensions: input.dimensions ?? null,
     room_analysis: input.roomAnalysis,
     constraint_ledger: input.constraintLedger,
-    reference_image_ids: input.referenceImageIds ?? []
+    reference_image_ids: input.referenceImageIds ?? [],
+    reference_analysis: input.referenceAnalysis ?? null
   };
   return {
     system: [
       "You are NEXORA DESIGN BRAIN, a senior interior architect and spatial designer.",
       "Return ONLY valid JSON. Do not include markdown fences or commentary.",
       "Create exactly three genuinely different, professionally coherent interior design concepts for the SAME source room.",
+      "When the user selected a specific style, all three concepts MUST remain faithful to that same style. They are three designer-led interpretations within one style, not three unrelated styles. Preserve its defining design grammar while varying composition, joinery, material hierarchy and lighting.",
+      "When the user supplied a visual reference analysis, extract its design principles (proportions, rhythm, material hierarchy, contrast, joinery language, lighting and composition) and translate those principles to the source room. Never copy the reference room layout or objects literally.",
       "The concepts must differ in design thesis, spatial strategy, material choices and visual focal point; changing only colours is invalid.",
-      "Each concept must replace at least three meaningful elements from the explicitly authorized replaceable list. A palette-only refresh or surface filter is not a redesign.",
+      "Each concept must include at least three major design moves that change the room at composition or architectural-interior level: for example cabinet architecture, storage composition, furniture form, focal-point construction, lighting architecture or spatial hierarchy. A palette-only refresh, hardware swap or accessory styling is not a redesign.",
+      "Every item in the replace array MUST be copied verbatim from constraint_ledger.constraints.replaceable. Never invent an authorization. Each concept must name at least three distinct authorized replaceable elements.",
+      "Every item in the preserve array MUST be copied verbatim from constraint_ledger.constraints.fixed or constraint_ledger.constraints.preserve. Unknown elements are never permission to alter anything.",
       "Give each concept a distinct material palette, layout strategy and focal point; vary lighting and furniture direction as well.",
       "The render instruction must explicitly demand a substantial redesign, not a recolour, and name the concrete architectural/material changes to make.",
       "Treat the source image as immutable evidence of the existing room. Never invent dimensions or claim an unverified measurement.",
@@ -81,16 +86,18 @@ export function buildDesignBrainPrompt(input) {
           focal_point: "one clear visual anchor",
           functional_rationale: "how room functions and circulation are supported",
           preserve: ["ledger-backed preserved element"],
-          replace: ["cabinet fronts", "worktops", "lighting fixtures"],
+          replace: ["exact authorized element name 1", "exact authorized element name 2", "exact authorized element name 3"],
+          major_design_moves: ["target element — architectural transformation — visual and functional effect"],
           render_instructions: "detailed photorealistic image-edit instruction tied to the source photo"
         }]
       }, null, 2),
-      "Return exactly three concept objects. Every listed field is required. All arrays must be non-empty; preserve must contain at least one ledger-backed element and replace at least three explicitly authorized elements."
+      "Return exactly three concept objects. Every listed field is required. All arrays must be non-empty; preserve must contain at least one ledger-backed element, replace must contain at least three exact authorized elements, and major_design_moves must contain at least three substantial non-cosmetic changes.",
+      "If fewer than three elements are explicitly authorized for replacement, do not invent permission: return a response that clearly identifies the insufficient authorization rather than fabricating replacements."
     ].join("\n")
   };
 }
 
-export function validateDesignBrainResponse(raw, expectedSourceImageId) {
+export function validateDesignBrainResponse(raw, expectedSourceImageId, constraintLedger = {}) {
   let parsed = raw;
   if (typeof raw === "string") {
     try { parsed = JSON.parse(raw); }
@@ -108,6 +115,9 @@ export function validateDesignBrainResponse(raw, expectedSourceImageId) {
   }
   const ids = new Set();
   const theses = new Set();
+  const allowedReplace = new Set((constraintLedger?.constraints?.replaceable ?? []).map(item => normalize(typeof item === "string" ? item : item?.element)).filter(Boolean));
+  const allowedPreserve = new Set([...(constraintLedger?.constraints?.fixed ?? []), ...(constraintLedger?.constraints?.preserve ?? [])].map(item => normalize(typeof item === "string" ? item : item?.element)).filter(Boolean));
+  if (allowedReplace.size < 3) errors.push("At least three explicitly authorized replaceable elements are required before concepts can be approved.");
   const signatures = new Set();
   parsed.concepts.forEach((concept, index) => {
     const prefix = `concepts[${index}]`;
@@ -134,6 +144,19 @@ export function validateDesignBrainResponse(raw, expectedSourceImageId) {
     if (nonEmptyString(concept.concept_id)) {
       if (ids.has(concept.concept_id)) errors.push("Concept IDs must be unique.");
       ids.add(concept.concept_id);
+    }
+    if (Array.isArray(concept.replace)) {
+      const normalizedReplace = concept.replace.map(normalize);
+      if (new Set(normalizedReplace).size !== normalizedReplace.length) errors.push(`${prefix}.replace must contain distinct elements.`);
+      for (const element of normalizedReplace) if (!allowedReplace.has(element)) errors.push(`${prefix}.replace contains an element not explicitly authorized by the user.`);
+    }
+    if (Array.isArray(concept.preserve)) {
+      for (const element of concept.preserve.map(normalize)) if (!allowedPreserve.has(element)) errors.push(`${prefix}.preserve contains an element not listed as fixed or preserved in the constraint ledger.`);
+    }
+    if (!Array.isArray(concept.major_design_moves) || concept.major_design_moves.length < 3) {
+      errors.push(`${prefix}.major_design_moves must contain at least three substantial design transformations.`);
+    } else if (concept.major_design_moves.some(move => !nonEmptyString(move) || /^(recolou?r|paint|accessor|decor only|hardware only)/i.test(move.trim()))) {
+      errors.push(`${prefix}.major_design_moves cannot be cosmetic-only changes.`);
     }
     const thesis = normalize(concept.design_thesis);
     if (thesis && theses.has(thesis)) errors.push("Design theses must be materially different.");
@@ -179,7 +202,7 @@ export async function createAiDesignConcepts({ adapter, input }) {
   }
   const prompt = buildDesignBrainPrompt(input);
   const raw = await adapter.generateText(prompt);
-  const validation = validateDesignBrainResponse(raw, input.sourceImageId);
+  const validation = validateDesignBrainResponse(raw, input.sourceImageId, input.constraintLedger);
   if (!validation.valid) {
     const error = new Error("AI Design Brain response failed validation.");
     error.validation = validation;
