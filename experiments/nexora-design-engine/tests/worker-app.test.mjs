@@ -99,11 +99,16 @@ test("runs Moondream photo analysis and Llama Design Brain through the full conc
   form.append("externalProcessingConsent","true");
   form.append("image",new Blob([Uint8Array.from([255,216,255,0,1,2])],{type:"image/jpeg"}),"source-kitchen.jpg");
   form.append("referenceImage",new Blob([Uint8Array.from([255,216,255,8,9,10])],{type:"image/jpeg"}),"design-reference.jpg");
-  form.append("roomType","kitchen");form.append("stylePreference","designer-led");form.append("userBrief","A functional family kitchen with a strong architectural focal point.");form.append("intendedUse","daily family cooking");
+  form.append("roomType","kitchen");form.append("stylePreference","contemporary");form.append("userBrief","A functional family kitchen with a strong architectural focal point.");form.append("intendedUse","daily family cooking");
   form.append("fixed","existing window and room shell");form.append("preserve","existing window and room shell");form.append("replaceable","cabinet fronts\nworktops\nbacksplash\nisland finish");
   const response=await worker.fetch(sameOriginRequest("/api/concepts",{method:"POST",body:form}),{AI,DB:db});
   const body=await response.json();
-  assert.equal(response.status,200);assert.equal(body.concepts.length,3);assert.equal(body.source_image_immutable,true);assert.equal(body.rendering_performed,false);assert.ok(body.session_id);assert.equal(calls.length,3);assert.match(calls[0],/moondream/);assert.match(calls[1],/moondream/);assert.match(calls[2],/llama-3.3-70b/);assert.equal(body.reference_analysis.design_language,"Quiet sculptural contemporary with warm natural materials");assert.equal(sessions.size,1);
+  assert.equal(response.status,200);assert.equal(body.concepts.length,3);assert.equal(body.source_image_immutable,true);assert.equal(body.rendering_performed,false);assert.ok(body.session_id);assert.equal(calls.length,3);assert.match(calls[0],/moondream/);assert.match(calls[1],/moondream/);assert.match(calls[2],/llama-3.3-70b/);assert.equal(body.reference_analysis.design_language,"Quiet sculptural contemporary with warm natural materials");
+  const storedConcepts=JSON.parse([...sessions.values()][0].concepts_json);
+  assert.equal(storedConcepts[0].quality_context.style_preference,"contemporary");
+  assert.equal(storedConcepts[0].quality_context.reference_analysis.design_language,"Quiet sculptural contemporary with warm natural materials");
+  assert.ok(storedConcepts[0].quality_context.source_observations.some(item=>item.label==="visible kitchen wall"));
+  assert.equal(body.concepts[0].quality_context,undefined);assert.equal(sessions.size,1);
   const saved=JSON.parse([...sessions.values()][0].concepts_json);assert.equal(saved.length,3);assert.ok(saved.every(x=>typeof x.render_instructions==="string"));assert.ok(body.concepts.every(x=>!Object.hasOwn(x,"render_instructions")));
 });
 

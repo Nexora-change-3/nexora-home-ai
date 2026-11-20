@@ -22,6 +22,7 @@ NEXORA now accepts two separate images:
 7. Three concepts are generated for the same source room. If a style was selected, all three remain within that style while varying their design interpretation.
 8. The browser shows the extracted design-language summary so the user can see what NEXORA understood from the reference.
 9. Rendering uses the source room photo and the resulting design brief. The reference photo itself is not passed as the render source.
+10. Before saving a rendered result, Moondream checks room identity and performs a structured review against the source observations, fixed/preserved constraints, major design moves and reference principles. Clear fixed-element changes and cosmetic-only outputs are rejected; incomplete evidence is marked for review.
 
 ## Non-negotiable boundaries
 
@@ -36,7 +37,7 @@ NEXORA now accepts two separate images:
 
 - One optional reference image is supported per design session.
 - The vision model's interpretation is probabilistic and must be reviewed; it is not a material specification or measured drawing.
-- The current live post-render quality gate still does not perform pixel-aware comparison of room shell, fixed anchors, reference fidelity or redesign depth. The existing room-identity check is not a substitute for this future visual QA stage.
+- The post-render review is model-assisted and evidence-conditioned, not pixel registration or a geometric diff. It can miss subtle spatial changes and must not be represented as a measured guarantee. Ambiguous checks are marked for review rather than silently passed.
 - The Worker route and adapter are provider-injected at the Design Brain boundary, but this reference implementation currently uses the configured Cloudflare Workers AI Moondream adapter.
 
 ## Verification

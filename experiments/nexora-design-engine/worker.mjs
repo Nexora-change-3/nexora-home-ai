@@ -139,7 +139,7 @@ function makeConcepts(input) {
   });
 }
 
-function makeAdapter(env, sourceImage = null) {
+function makeAdapter(env, sourceImage = null, qualityContext = null) {
   if (!env.AI || typeof env.AI.run !== "function") throw fail("WORKERS_AI_UNAVAILABLE", "Cloudflare Workers AI is not configured for this project.", 503);
   const dispatchStore = createD1DispatchStore(env.DB);
   return createWorkersAiFlux2DevAdapter({
@@ -153,7 +153,8 @@ function makeAdapter(env, sourceImage = null) {
         AI: env.AI,
         sourceImage,
         candidateImage: { bytes, contentType: mimeType },
-        expectedRoomType: sourceImage?.roomType
+        expectedRoomType: sourceImage?.roomType,
+        qualityContext
       });
       const finalMetadata = { ...metadata, quality_gate: qualityGate };
       const createdAt = new Date().toISOString();
@@ -228,7 +229,7 @@ async function handleRender(request, env) {
   const concept=Array.isArray(savedConcepts)?savedConcepts.find(x=>x.concept_id===conceptId):null;if(!concept||typeof concept.render_instructions!=="string")throw fail("INVALID_CONCEPT","Выбранная концепция отсутствует в сохранённой сессии.");
   await env.DB.prepare("DELETE FROM nexora_render_images WHERE expires_at <= ?").bind(new Date().toISOString()).run();
   await enforceRateLimit(env, request, requestId);
-  const adapter = makeAdapter(env, { bytes, contentType: mimeType, roomType, width: imageWidth, height: imageHeight });
+  const adapter = makeAdapter(env, { bytes, contentType: mimeType, roomType, width: imageWidth, height: imageHeight }, concept.quality_context || null);
   const result = await adapter.render({
     request_id: requestId,
     source_image_ref: sourceImageRef,
@@ -254,9 +255,9 @@ async function handleConcepts(request,env){
  if(!env.AI||typeof env.AI.run!=="function")throw fail("WORKERS_AI_UNAVAILABLE","Cloudflare Workers AI не настроен.",503);
  const session=await createDesignSession({visionAdapter:createMoondreamWorkersAIAdapter({AI:env.AI}),textAdapter:createWorkersAiDesignBrainAdapter({AI:env.AI}),sourceImage:{id:sourceImageId,bytes,contentType:mimeType},referenceImage,roomType:input.roomType,userBrief:input.userBrief,stylePreference:input.stylePreference,intendedUse:input.intendedUse,dimensions:input.dimensions,constraints:input.constraints});
  if(session.status!=="design_concepts_ready"||!session.ai_design?.validation?.valid||session.ai_design.concepts.length!==3)throw fail("DESIGN_SESSION_REJECTED","AI-дизайнер не сформировал три проверенные концепции.",422);
- const concepts=session.ai_design.concepts.map(x=>{const renderInstructions=[x.render_instructions,`DESIGN THESIS: ${x.design_thesis}`,`LAYOUT STRATEGY: ${x.layout_strategy}`,`MATERIAL PALETTE: ${x.material_palette.join("; ")}`,`LIGHTING STRATEGY: ${x.lighting_strategy.join("; ")}`,`FURNITURE DIRECTION: ${x.furniture_direction.join("; ")}`,`FOCAL POINT: ${x.focal_point}`,`FUNCTIONAL REQUIREMENTS: ${x.functional_rationale}`,`AUTHORIZED REPLACEMENTS: ${x.replace.join("; ")}`,`MAJOR DESIGN MOVES: ${x.major_design_moves.join("; ")}`,`MUST PRESERVE: ${x.preserve.join("; ")}`,"MANDATORY RENDER POLICY: make a substantial designer-led redesign, not a recolour, colour filter or surface-only refresh. Visibly change at least three major design elements from the authorized replacement list. Preserve the exact source room shell, walls, windows, doors, ceiling, camera viewpoint, perspective and fixed services. Do not invent geometry. Keep realistic circulation and construction. Photorealistic interior architecture photography."].join("\n");if(renderInstructions.length>12000)throw fail("DESIGN_PROMPT_TOO_LONG","Design instructions exceed the safe render prompt limit.",422);return {concept_id:x.concept_id,name:x.name,thesis:x.design_thesis,layout:x.layout_strategy,material:x.material_palette.join("; "),lighting:x.lighting_strategy.join("; "),furniture:x.furniture_direction.join("; "),focal_point:x.focal_point,functional_rationale:x.functional_rationale,preserve:x.preserve,replace:x.replace,major_design_moves:x.major_design_moves,render_instructions:renderInstructions};});
+ const concepts=session.ai_design.concepts.map(x=>{const renderInstructions=[x.render_instructions,`DESIGN THESIS: ${x.design_thesis}`,`LAYOUT STRATEGY: ${x.layout_strategy}`,`MATERIAL PALETTE: ${x.material_palette.join("; ")}`,`LIGHTING STRATEGY: ${x.lighting_strategy.join("; ")}`,`FURNITURE DIRECTION: ${x.furniture_direction.join("; ")}`,`FOCAL POINT: ${x.focal_point}`,`FUNCTIONAL REQUIREMENTS: ${x.functional_rationale}`,`AUTHORIZED REPLACEMENTS: ${x.replace.join("; ")}`,`MAJOR DESIGN MOVES: ${x.major_design_moves.join("; ")}`,`MUST PRESERVE: ${x.preserve.join("; ")}`,"MANDATORY RENDER POLICY: make a substantial designer-led redesign, not a recolour, colour filter or surface-only refresh. Visibly change at least three major design elements from the authorized replacement list. Preserve the exact source room shell, walls, windows, doors, ceiling, camera viewpoint, perspective and fixed services. Do not invent geometry. Keep realistic circulation and construction. Photorealistic interior architecture photography."].join("\n");if(renderInstructions.length>12000)throw fail("DESIGN_PROMPT_TOO_LONG","Design instructions exceed the safe render prompt limit.",422);return {concept_id:x.concept_id,name:x.name,thesis:x.design_thesis,layout:x.layout_strategy,material:x.material_palette.join("; "),lighting:x.lighting_strategy.join("; "),furniture:x.furniture_direction.join("; "),focal_point:x.focal_point,functional_rationale:x.functional_rationale,preserve:x.preserve,replace:x.replace,major_design_moves:x.major_design_moves,quality_context:{source_observations:session.evidence.vision.observations,constraints:session.evidence.constraint_ledger.constraints,reference_analysis:session.reference_analysis,style_preference:input.stylePreference,design_thesis:x.design_thesis,major_design_moves:x.major_design_moves},render_instructions:renderInstructions};});
   const sessionId=crypto.randomUUID(),createdAt=new Date().toISOString(),expiresAt=new Date(Date.now()+RESULT_TTL_HOURS*3600000).toISOString();await env.DB.prepare("INSERT INTO nexora_design_sessions (session_id, source_image_id, room_type, concepts_json, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)").bind(sessionId,sourceImageId,input.roomType,JSON.stringify(concepts),createdAt,expiresAt).run();
- return json({session_id:sessionId,source_image_id:sourceImageId,source_image_immutable:true,reference_analysis:session.reference_analysis,concepts:concepts.map(({render_instructions,...fields})=>fields),vision_review_required:session.evidence.vision.review_required,constraint_review_required:session.evidence.constraint_ledger.requires_review,design_provider:session.ai_design.provider,design_model:session.ai_design.model_id,rendering_performed:false,expires_at:expiresAt});
+ return json({session_id:sessionId,source_image_id:sourceImageId,source_image_immutable:true,reference_analysis:session.reference_analysis,concepts:concepts.map(({render_instructions,quality_context,...fields})=>fields),vision_review_required:session.evidence.vision.review_required,constraint_review_required:session.evidence.constraint_ledger.requires_review,design_provider:session.ai_design.provider,design_model:session.ai_design.model_id,rendering_performed:false,expires_at:expiresAt});
 }
 async function handleJob(request, env, id, recover = false) {
   if (!/^[0-9a-f-]{36}$/i.test(id)) throw fail("INVALID_REQUEST_ID", "Идентификатор генерации недействителен.");
