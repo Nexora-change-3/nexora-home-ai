@@ -24,6 +24,7 @@ button{border:0;border-radius:10px;background:var(--accent);color:white;font:600
 .empty{font-size:13px;color:var(--muted);padding:14px 0}.footer{margin-top:28px;color:var(--muted);font-size:11px;max-width:820px}.footer a{color:inherit}
 @media(max-width:820px){.layout{grid-template-columns:1fr}header{padding:20px 18px}main{padding:26px 16px 50px}.panel{padding:18px}.grid2{grid-template-columns:1fr}}
  .reference-preview{display:none;max-width:100%;max-height:240px;object-fit:contain;margin-top:12px;border-radius:10px;border:1px solid var(--line)} .reference-analysis{margin-top:12px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--card);font-size:13px}.reference-analysis strong{display:block;margin-bottom:5px}.reference-analysis p{margin:0;color:var(--muted)}
+ .quality-note{margin:8px 0 0;color:var(--muted);font-size:12px;line-height:1.45}
 </style>
 </head>
 <body>
@@ -69,10 +70,10 @@ button{border:0;border-radius:10px;background:var(--accent);color:white;font:600
 <aside>
 <div class="panel"><div class="step">03 / Результаты</div><h2>Ваши варианты дизайна</h2><div id="results" class="results"><div class="empty">Здесь появятся созданные изображения. Они сохраняются в локальной базе этого браузера.</div></div></div>
 <div class="panel"><h2>Хранение и приватность</h2><div id="providerStatus" class="notice">Проверяю доступность бесплатного генератора…</div>
-<p class="notice">Исходное фото не сохраняется на сервере NEXORA. При запуске генерации оно передаётся выбранному внешнему сервису. Готовые изображения временно хранятся в NEXORA до 24 часов для восстановления, а затем остаются в локальной базе браузера.</p><button id="clear" class="danger full">Удалить локальные фотографии и результаты</button><div id="clearStatus" class="statusline"></div></div>
+<p class="notice">Исходник и фото-референс не сохраняются на сервере NEXORA. При анализе и генерации изображения передаются выбранному внешнему сервису. Готовые изображения временно хранятся в NEXORA до 24 часов для восстановления, а затем остаются в локальной базе браузера.</p><button id="clear" class="danger full">Удалить локальные фотографии и результаты</button><div id="clearStatus" class="statusline"></div></div>
 </aside>
 </div>
-<div class="footer">NEXORA Design Engine 1.4 · Llama 3.3 70B Design Brain · FLUX.2 Dev · Moondream room-identity check. Результат требует проверки архитектором: модель может ошибаться в геометрии, деталях и функциональности. Не используйте изображение как строительный чертёж.</div>
+<div class="footer">NEXORA Design Engine 1.4 · Llama 3.3 70B Design Brain · FLUX.2 Dev · Moondream room analysis + visual quality review. Результат требует проверки архитектором: модель может ошибаться в геометрии, деталях и функциональности. Не используйте изображение как строительный чертёж.</div>
 </main>
 <script>
 const $ = (id) => document.getElementById(id);
@@ -227,7 +228,8 @@ async function fetchAndSaveResult(job, result) {
     conceptName: result.concept_name || job.conceptName,
     createdAt: new Date().toISOString(),
     model: result.model_id || "FLUX.2 Dev",
-    recovered: Boolean(result.recovered)
+    recovered: Boolean(result.recovered),
+    qualityGate: result.quality_gate || null
   });
   await dbPut("jobs", { ...job, state: "succeeded" });
   await dbDelete("jobs", job.id);
@@ -362,6 +364,15 @@ async function renderSavedResults() {
     link.textContent = "Сохранить";
     title.append(name, link);
     card.append(img, title);
+    if (item.qualityGate) {
+      const note = document.createElement("p");
+      note.className = "quality-note";
+      const visual = item.qualityGate.visual_review;
+      if (visual?.review_status === "unavailable") note.textContent = "Автоматическая визуальная проверка не завершена — нужна ручная оценка.";
+      else if (item.qualityGate.review_required) note.textContent = "AI-проверка: отдельные элементы требуют ручной проверки.";
+      else note.textContent = "AI-проверка не выявила критических отклонений по проверенным критериям.";
+      card.append(note);
+    }
     return card;
   });
   $("results").replaceChildren(...cards);
@@ -417,7 +428,7 @@ $("clear").addEventListener("click", clearLocal);
   try {
     const health = await fetch("/api/health").then((r) => r.json());
     if (!health.ok || health.provider !== "cloudflare-workers-ai") throw new Error("Native Workers AI provider is unavailable.");
-    $("providerStatus").textContent = "Cloudflare Workers AI · Llama 3.3 70B Design Brain · FLUX.2 Dev · Moondream room-identity check. 1 проектная сессия и до 3 генераций в сутки; платные резервные сервисы отключены.";
+    $("providerStatus").textContent = "Cloudflare Workers AI · Llama 3.3 70B Design Brain · FLUX.2 Dev · Moondream room analysis + visual quality review. 1 проектная сессия и до 3 генераций в сутки; платные резервные сервисы отключены.";
     const saved = await dbGet("source", "active");
     if (saved?.blob) setPhoto(saved.blob, saved.name);
     await renderSavedResults();

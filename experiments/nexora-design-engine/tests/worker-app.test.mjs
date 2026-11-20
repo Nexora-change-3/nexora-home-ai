@@ -26,6 +26,9 @@ test("serves the standalone app with restrictive security headers", async () => 
   assert.match(html, /externalProcessingConsent/);
   assert.match(html, /id="referencePhoto"/);
   assert.match(html, /id="referenceAnalysis"/);
+  assert.match(html, /qualityGate: result.quality_gate/);
+  assert.match(html, /quality-note/);
+  assert.match(html, /Исходник и фото-референс не сохраняются на сервере/i);
   assert.match(html, /исходник и референс не сохраняются на сервере/i);
   assert.match(html, /анализирует дизайн-язык|дизайн-язык референса|Фото-референс/);
   assert.match(html, /Корпуса и фасады мебели/);
