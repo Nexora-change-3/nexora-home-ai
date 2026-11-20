@@ -49,7 +49,7 @@ test("serves health metadata without exposing credentials or image data", async 
   assert.equal(body.version, "1.4.0");
   assert.equal(body.design_session_limit, 1);
   assert.equal(body.paid_fallback_enabled, false);
-  assert.equal(body.quality_gate, "moondream-room-identity-only");
+  assert.equal(body.quality_gate, "moondream-structured-visual-review-and-room-identity");
   assert.equal(body.output_storage, "Cloudflare D1 temporary; browser IndexedDB persistent");
   assert.equal(JSON.stringify(body).includes("token"), false);
 });
