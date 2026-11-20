@@ -23,7 +23,7 @@ button{border:0;border-radius:10px;background:var(--accent);color:white;font:600
 .results{display:grid;gap:14px}.result{border:1px solid var(--line);border-radius:13px;padding:12px;background:#fff}.result img{width:100%;display:block;border-radius:8px}.result-title{display:flex;justify-content:space-between;gap:12px;align-items:center;margin:8px 0;font-size:13px;font-weight:650}.result a{color:var(--accent);font-size:12px}
 .empty{font-size:13px;color:var(--muted);padding:14px 0}.footer{margin-top:28px;color:var(--muted);font-size:11px;max-width:820px}.footer a{color:inherit}
 @media(max-width:820px){.layout{grid-template-columns:1fr}header{padding:20px 18px}main{padding:26px 16px 50px}.panel{padding:18px}.grid2{grid-template-columns:1fr}}
- .reference-preview{display:none;max-width:100%;max-height:240px;object-fit:contain;margin-top:12px;border-radius:10px;border:1px solid var(--line)}
+ .reference-preview{display:none;max-width:100%;max-height:240px;object-fit:contain;margin-top:12px;border-radius:10px;border:1px solid var(--line)} .reference-analysis{margin-top:12px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--card);font-size:13px}.reference-analysis strong{display:block;margin-bottom:5px}.reference-analysis p{margin:0;color:var(--muted)}
 </style>
 </head>
 <body>
@@ -54,12 +54,13 @@ button{border:0;border-radius:10px;background:var(--accent);color:white;font:600
 Светильники и сценарии освещения
 Свободно стоящая мебель
 Фурнитура и декор</textarea>
+<div class="consent"><input type="checkbox" id="consent"><label for="consent" style="margin:0;font-weight:500">Я разрешаю передать исходную фотографию и, если добавлен, фото-референс в Cloudflare Workers AI: анализ помещения и дизайн-языка (Moondream), разработка трёх концепций (Llama 3.3 70B) и генерация изображений (FLUX.2 Dev). Исходник и референс не сохраняются на сервере; сервер временно хранит только концепции и результаты. Бесплатная квота ограничена; платные сервисы не подключаются.</label></div>
 <button id="plan" class="secondary full">Сформировать 3 дизайнерские концепции</button>
-<div id="planStatus" class="statusline" aria-live="polite"></div>
+<div id="planStatus" class="statusline" aria-live="polite"></div><div id="referenceAnalysis" class="reference-analysis" hidden></div>
 </div>
 <div class="panel" id="conceptPanel" hidden>
 <div class="step">02 / Выбор направления</div><h2>Три разные идеи</h2><div id="concepts" class="concepts"></div>
-<div class="consent"><input type="checkbox" id="consent"><label for="consent" style="margin:0;font-weight:500">Я разрешаю передать исходную фотографию и, если добавлен, фото-референс в Cloudflare Workers AI: анализ помещения и дизайн-языка (Moondream), разработка трёх концепций (Llama 3.3 70B) и генерация изображений (FLUX.2 Dev). NEXORA не сохраняет исходное фото на сервере; оно хранится в браузере. Сервер временно хранит только концепции и результаты. Бесплатная квота ограничена; платные сервисы не подключаются.</label></div>
+
 <button id="render" class="full" disabled>Создать выбранные варианты</button>
 <div id="renderStatus" class="statusline" aria-live="polite"></div><div class="progress" id="progress"><i id="progressBar"></i></div>
 <p class="notice">Варианты создаются последовательно. Общий лимит — 3 генерации в сутки на весь проект, чтобы использовать только бесплатную дневную квоту Cloudflare Workers AI. Платный резервный сервис отключён.</p>
@@ -208,11 +209,11 @@ function selectedConcepts() {
   return currentConcepts.filter((x) => ids.includes(x.concept_id));
 }
 function updatePlanButton() { $("plan").disabled = !sourceBlob || !$("consent").checked || isPlanning; }
-function invalidateDesignSession() { currentDesignSessionId=null; currentSourceImageId=null; currentConcepts=[]; $("conceptPanel").hidden=true; updateRenderButton(); }
+function invalidateDesignSession() { currentDesignSessionId=null; currentSourceImageId=null; currentConcepts=[]; $("conceptPanel").hidden=true; $("referenceAnalysis").replaceChildren(); $("referenceAnalysis").hidden=true; updateRenderButton(); }
 function updateRenderButton() {
   $("render").disabled = !sourceBlob || !currentDesignSessionId || !selectedConcepts().length || !$("consent").checked || isRendering;
 }
-async function planConcepts(){if(!sourceBlob||!$("consent").checked||isPlanning)return;isPlanning=true;updatePlanButton();invalidateDesignSession();setStatus("planStatus",referenceBlob?"Анализирую исходную комнату и отдельно извлекаю дизайн-язык референса…":"Анализирую исходную фотографию и разрабатываю три разные дизайнерские концепции…");try{const sourceId="sha256:"+await sha256(sourceBlob),input=designInput(sourceId),form=new FormData();form.append("image",sourceBlob,sourceName||"nexora-source");form.append("externalProcessingConsent","true");if(referenceBlob)form.append("referenceImage",referenceBlob,referenceName);for(const key of ["roomType","stylePreference","userBrief","intendedUse","fixed","preserve","replaceable"]){const value=input[key];form.append(key,Array.isArray(value)?value.join("\n"):String(value??""));}const response=await fetch("/api/concepts",{method:"POST",body:form}),data=await response.json();if(!response.ok)throw new Error(data.message||"Не удалось сформировать концепции.");currentDesignSessionId=data.session_id;currentSourceImageId=sourceId;currentConcepts=data.concepts;$("concepts").replaceChildren(...currentConcepts.map(conceptCard));$("conceptPanel").hidden=false;const review=data.vision_review_required||data.constraint_review_required?" Требуется ручная проверка неоднозначных элементов помещения.":"";setStatus("planStatus","AI-дизайнер проанализировал фотографию и подготовил три самостоятельные концепции."+review);setStatus("renderStatus","Выберите концепции для визуализации. Исходная фотография останется неизменной.");updateRenderButton();}catch(error){invalidateDesignSession();setStatus("planStatus",error.message,true);}finally{isPlanning=false;updatePlanButton();}}
+async function planConcepts(){if(!sourceBlob||!$("consent").checked||isPlanning)return;isPlanning=true;updatePlanButton();invalidateDesignSession();setStatus("planStatus",referenceBlob?"Анализирую исходную комнату и отдельно извлекаю дизайн-язык референса…":"Анализирую исходную фотографию и разрабатываю три разные дизайнерские концепции…");try{const sourceId="sha256:"+await sha256(sourceBlob),input=designInput(sourceId),form=new FormData();form.append("image",sourceBlob,sourceName||"nexora-source");form.append("externalProcessingConsent","true");if(referenceBlob)form.append("referenceImage",referenceBlob,referenceName);for(const key of ["roomType","stylePreference","userBrief","intendedUse","fixed","preserve","replaceable"]){const value=input[key];form.append(key,Array.isArray(value)?value.join("\n"):String(value??""));}const response=await fetch("/api/concepts",{method:"POST",body:form}),data=await response.json();if(!response.ok)throw new Error(data.message||"Не удалось сформировать концепции.");currentDesignSessionId=data.session_id;currentSourceImageId=sourceId;currentConcepts=data.concepts;if(data.reference_analysis){const summary=$("referenceAnalysis"),heading=document.createElement("strong"),details=document.createElement("p");heading.textContent="Дизайн-язык референса: "+data.reference_analysis.design_language;details.textContent=(data.reference_analysis.signature_elements||[]).join(" · ");summary.replaceChildren(heading,details);summary.hidden=false;}$("concepts").replaceChildren(...currentConcepts.map(conceptCard));$("conceptPanel").hidden=false;const review=data.vision_review_required||data.constraint_review_required?" Требуется ручная проверка неоднозначных элементов помещения.":"";setStatus("planStatus","AI-дизайнер проанализировал фотографию и подготовил три самостоятельные концепции."+review);setStatus("renderStatus","Выберите концепции для визуализации. Исходная фотография останется неизменной.");updateRenderButton();}catch(error){invalidateDesignSession();setStatus("planStatus",error.message,true);}finally{isPlanning=false;updatePlanButton();}}
 async function fetchAndSaveResult(job, result) {
   const response = await fetch(result.result_url || ("/api/results/" + job.id));
   if (!response.ok) {
@@ -377,6 +378,7 @@ async function clearLocal() {
   $("preview").removeAttribute("src");
   $("preview").style.display = "none";
   $("photo").value = "";
+  $("referenceAnalysis").replaceChildren(); $("referenceAnalysis").hidden = true;
   $("conceptPanel").hidden = true;
   currentConcepts = [];
   setStatus("clearStatus", "Локальные фотографии и результаты удалены.");
